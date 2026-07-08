@@ -40,7 +40,23 @@
     />
     
     <!-- Main Content -->
-    <main class="main-content">
+    <main
+      class="main-content"
+      @dragenter="onDragEnter"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
+    >
+      <!-- Drag-and-drop upload overlay -->
+      <div v-if="isDraggingFile" class="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay__inner">
+          <div class="drop-overlay__icon">📎</div>
+          <p class="drop-overlay__text">
+            Drop to upload{{ appStore.currentChannel ? ` to ${appStore.currentChannel.name}` : '' }}
+          </p>
+        </div>
+      </div>
+
       <div v-if="appStore.currentChannel" class="chat-container">
         <!-- Chat Header (Desktop only) -->
         <ChatHeader
@@ -464,6 +480,64 @@ const handlePaste = async (event: ClipboardEvent) => {
   }
 }
 
+// Drag-and-drop upload: drop file(s) anywhere in the chat area to upload them
+// (one message per file) without opening the upload dialog. This is the reliable
+// path for arbitrary files, since browser paste only exposes images.
+const isDraggingFile = ref(false)
+let dragDepth = 0
+
+const dragHasFiles = (event: DragEvent): boolean => {
+  const types = event.dataTransfer?.types
+  return !!types && Array.from(types).includes('Files')
+}
+
+const onDragEnter = (event: DragEvent) => {
+  if (!dragHasFiles(event)) return
+  event.preventDefault()
+  dragDepth++
+  isDraggingFile.value = true
+}
+
+const onDragOver = (event: DragEvent) => {
+  if (!dragHasFiles(event)) return
+  event.preventDefault() // required so a drop is allowed to fire
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+}
+
+const onDragLeave = (event: DragEvent) => {
+  if (!dragHasFiles(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) isDraggingFile.value = false
+}
+
+const onDrop = async (event: DragEvent) => {
+  if (!dragHasFiles(event)) return
+  event.preventDefault()
+  dragDepth = 0
+  isDraggingFile.value = false
+
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length === 0) return
+
+  if (!appStore.currentChannelId) {
+    toastStore.info('Select a channel first to upload')
+    return
+  }
+
+  // uploadFiles shows its own in-progress / success / failure feedback.
+  const count = await uploadFiles(files)
+  if (count > 0) {
+    playSent()
+    scrollToBottom()
+  }
+}
+
+// Safety net: without this, a file dropped OUTSIDE the chat area makes the
+// browser navigate to (open) the file and blow away the app. Swallow those.
+const preventStrayFileDrop = (event: DragEvent) => {
+  if (dragHasFiles(event)) event.preventDefault()
+}
+
 const handleSendMessage = async (content: string) => {
   if (!appStore.currentChannelId) return
   
@@ -711,9 +785,11 @@ onMounted(async () => {
   // 3. WebSocket connection (will gracefully fail if offline)
   useWebSocket()
   
-  // 4. Set up keyboard shortcuts + paste-to-upload
+  // 4. Set up keyboard shortcuts + paste-to-upload + drag-drop safety net
   setupKeyboardShortcuts()
   document.addEventListener('paste', handlePaste)
+  window.addEventListener('dragover', preventStrayFileDrop)
+  window.addEventListener('drop', preventStrayFileDrop)
   
   // 5. Auto-select first channel if none selected and we have channels
   if (!appStore.currentChannelId && appStore.channels.length > 0) {
@@ -747,6 +823,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('paste', handlePaste)
+  window.removeEventListener('dragover', preventStrayFileDrop)
+  window.removeEventListener('drop', preventStrayFileDrop)
 })
 </script>
 
@@ -762,6 +840,54 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative; /* positioning context for the drag-drop overlay */
+}
+
+/* Drag-and-drop upload overlay */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 130, 246, 0.12);
+  backdrop-filter: blur(1px);
+  pointer-events: none; /* let drag events reach .main-content underneath */
+}
+
+.drop-overlay__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 3rem;
+  border: 2px dashed #3b82f6;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.drop-overlay__icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.drop-overlay__text {
+  margin: 0;
+  font-size: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .drop-overlay {
+    background: rgba(59, 130, 246, 0.18);
+  }
+  .drop-overlay__inner {
+    background: rgba(31, 41, 55, 0.92);
+    color: #bfdbfe;
+    border-color: #60a5fa;
+  }
 }
 
 .chat-container {
