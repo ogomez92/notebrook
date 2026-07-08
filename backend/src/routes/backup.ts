@@ -83,10 +83,9 @@ router.post('/', authenticate, upload.single('database'), async (req: Request, r
 
     // Begin transaction to restore data
     const transaction = db.transaction(() => {
-      // Clear existing data (order matters due to foreign keys)
-      if (FTS5Enabled) {
-        db.exec('DELETE FROM messages_fts');
-      }
+      // Clear existing data. Deleting messages fires the FTS delete triggers,
+      // so messages_fts clears itself — a manual wipe here would corrupt the
+      // index by double-deleting rows the triggers also remove.
       db.exec('DELETE FROM messages');
       db.exec('DELETE FROM files');
       db.exec('DELETE FROM channels');

@@ -30,3 +30,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   content = 'messages',
   content_rowid = 'id'
 );
+
+-- Triggers keep messages_fts in sync with messages automatically (see
+-- migrations/4_fts_triggers.sql).
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE OF content ON messages
+  WHEN old.content IS NOT new.content
+BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;

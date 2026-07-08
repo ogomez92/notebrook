@@ -1,4 +1,4 @@
-import { db, FTS5Enabled } from "../db";
+import { db } from "../db";
 import { logger } from "../globals";
 
 // Workaround for an iOS app bug that occasionally posts the same message
@@ -24,15 +24,13 @@ export const dedupeMessages = () => {
 
   logger.info(`Dedupe: removing ${dupeIds.length} duplicate message(s).`);
 
+  // Deleting from messages fires the FTS delete trigger, so messages_fts stays
+  // in sync automatically (see migrations/4_fts_triggers.sql).
   const deleteMsg = db.prepare(`DELETE FROM messages WHERE id = ?`);
-  const deleteFts = FTS5Enabled
-    ? db.prepare(`DELETE FROM messages_fts WHERE rowid = ?`)
-    : null;
 
   const tx = db.transaction((ids: number[]) => {
     for (const id of ids) {
       deleteMsg.run(id);
-      if (deleteFts) deleteFts.run(id);
     }
   });
 

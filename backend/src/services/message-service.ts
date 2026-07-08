@@ -1,4 +1,4 @@
-import { db, FTS5Enabled } from "../db";
+import { db } from "../db";
 import { events } from "../globals";
 import * as FileService from "./file-service";
 
@@ -7,12 +7,7 @@ export const createMessage = async (channelId: string, content: string) => {
   const result = query.run({ channelId: channelId, content: content });
 
   const messageId = result.lastInsertRowid;
-  console.log(`Adding message for search with id ${messageId}`);
-  // Insert into FTS table if FTS is enabled.
-  if (FTS5Enabled) {
-    const query2 = db.prepare(`INSERT INTO messages_fts (rowid, content) VALUES ($rowId, $content)`);
-    const result2 = query2.run({ rowId: messageId, content: content });
-  }
+  // messages_fts is kept in sync by database triggers (migrations/4_fts_triggers.sql).
 
   events.emit('message-created', messageId, channelId, content);
   return messageId;
@@ -22,14 +17,6 @@ export const updateMessage = async (messageId: string, content: string, append: 
   const query = db.prepare(`UPDATE messages SET content = $content WHERE id = $id`);
   const result = query.run({ content: content, id: messageId });
 
-
-
-
-  // Update FTS table if enabled
-  if (!FTS5Enabled) {
-    const query2 = db.prepare(`INSERT INTO messages_fts (rowid, content) VALUES ($rowId, $content) ON CONFLICT(rowid) DO UPDATE SET content = excluded.content`);
-    const result2 = query.run({ rowId: messageId, content: content });
-  }
   events.emit('message-updated', messageId, content);
   return result;
 }
@@ -42,11 +29,6 @@ export const deleteMessage = async (messageId: string) => {
   const query = db.prepare(`DELETE FROM messages WHERE id = $id`);
   const result = query.run({ id: messageId });
 
-  // Remove from FTS table if enabled
-  if (FTS5Enabled) {
-    const query2 = db.prepare(`DELETE FROM messages_fts WHERE rowid = $rowId`);
-    const result2 = query2.run({ rowId: messageId });
-  }
   events.emit('message-deleted', messageId);
   return result;
 }
@@ -110,11 +92,7 @@ export const moveMessage = async (messageId: string, targetChannelId: string) =>
     throw new Error('Message not found or not updated');
   }
   
-  // Update FTS table if enabled
-  if (FTS5Enabled) {
-    // FTS table doesn't need channelId update, just content remains searchable
-    // No additional FTS changes needed since content hasn't changed
-  }
+  // A move only changes channelId, not content, so the FTS index is unaffected.
   
   events.emit('message-moved', messageId, (currentMessage as any).channelId, targetChannelId);
   return result;
