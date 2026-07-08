@@ -76,7 +76,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { useToastStore } from '@/stores/toast'
 import { useFileUpload } from '@/composables/useFileUpload'
 import BaseButton from '@/components/base/BaseButton.vue'
 
@@ -86,7 +85,6 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
-const toastStore = useToastStore()
 const { uploadFiles: uploadFilesToServer } = useFileUpload()
 
 const fileInput = ref<HTMLInputElement>()
@@ -141,18 +139,11 @@ const uploadFiles = async () => {
 
   try {
     // Each selected file becomes its own message (backend: one file per message).
+    // uploadFilesToServer emits its own toast + aria-live feedback.
     const total = selectedFiles.value.length
     const successCount = await uploadFilesToServer(selectedFiles.value, {
       onProgress: (index, percent) => { uploadProgress.value[index] = percent }
     })
-
-    if (successCount > 0) {
-      toastStore.success(
-        successCount === 1
-          ? 'File uploaded successfully!'
-          : `${successCount} of ${total} files uploaded successfully!`
-      )
-    }
 
     if (successCount < total) {
       error.value = successCount === 0

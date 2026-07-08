@@ -421,28 +421,46 @@ const selectChannel = async (channelId: number) => {
 // image or file) uploads them to the current channel. Text-only pastes are left
 // untouched so normal typing/pasting still works.
 const handlePaste = async (event: ClipboardEvent) => {
-  if (!appStore.currentChannelId) return
+  const data = event.clipboardData
+  if (!data) return
 
-  const items = event.clipboardData?.items
-  if (!items) return
-
+  // Collect files from both the items list (kind === 'file') and the files
+  // list — browsers vary on which they populate — and de-duplicate. Note: most
+  // browsers only expose *images* copied to the clipboard (e.g. screenshots);
+  // a document copied in the OS file manager usually isn't pasteable, so those
+  // fall through and a normal paste happens.
   const files: File[] = []
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    if (item && item.kind === 'file') {
-      const file = item.getAsFile()
-      if (file) files.push(file)
+  const seen = new Set<string>()
+  const add = (f: File | null) => {
+    if (!f) return
+    const key = `${f.name}:${f.size}:${f.type}`
+    if (seen.has(key)) return
+    seen.add(key)
+    files.push(f)
+  }
+  if (data.items) {
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i]
+      if (item && item.kind === 'file') add(item.getAsFile())
     }
   }
-  if (files.length === 0) return // nothing to upload — let the default paste happen
+  if (data.files) {
+    for (let i = 0; i < data.files.length; i++) add(data.files[i] ?? null)
+  }
+  if (files.length === 0) return // no files — let the default (text) paste happen
 
   event.preventDefault()
 
+  if (!appStore.currentChannelId) {
+    toastStore.info('Select a channel first to upload')
+    return
+  }
+
+  // uploadFiles shows its own in-progress / success / failure feedback.
   const count = await uploadFiles(files)
   if (count > 0) {
     playSent()
     scrollToBottom()
-    toastStore.success(count === 1 ? 'Pasted file uploaded' : `${count} pasted files uploaded`)
   }
 }
 
