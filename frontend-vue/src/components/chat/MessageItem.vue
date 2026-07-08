@@ -50,8 +50,10 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useAudio } from '@/composables/useAudio'
+import { useAnnouncer } from '@/composables/useAnnouncer'
 import { useToastStore } from '@/stores/toast'
 import { useAppStore } from '@/stores/app'
+import { useUndo } from '@/composables/useUndo'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
 import { formatSmartTimestamp, formatTimestampForScreenReader } from '@/utils/time'
@@ -77,9 +79,11 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Debug message structure (removed for production)
 
-const { speak, playSound } = useAudio()
+const { playSound } = useAudio()
+const { announce } = useAnnouncer()
 const toastStore = useToastStore()
 const appStore = useAppStore()
+const { recordMessageDeletion } = useUndo()
 
 // Root element ref for DOM-based focus management
 const rootEl = ref<HTMLElement | null>(null)
@@ -255,13 +259,9 @@ const handleKeydown = (event: KeyboardEvent) => {
       emit('open-dialog-edit', props.message)
     }
   } else if (event.key === 'r') {
-    // Read message aloud (only when no modifiers are pressed)
-    if (appStore.settings.ttsEnabled) {
-      speak(props.message.content)
-      toastStore.info('Reading message')
-    } else {
-      toastStore.info('Text-to-speech is disabled')
-    }
+    // Announce message content to assistive technology
+    announce(props.message.content)
+    toastStore.info('Reading message')
   } else if (event.key === 'Delete') {
     event.preventDefault()
     handleDelete()
@@ -315,13 +315,15 @@ const handleDelete = async () => {
 
     try {
       await apiService.deleteMessage(msg.channel_id, msg.id)
+      // Server delete confirmed — record it so Ctrl+Z can re-add it.
+      recordMessageDeletion(msg, msg.channel_id)
       // Attempt to sync the channel to reconcile with server state
       try {
         await syncService.syncChannelMessages(msg.channel_id)
       } catch (syncError) {
         console.warn('Post-delete sync failed; continuing with local state.', syncError)
       }
-      toastStore.success('Message deleted')
+      toastStore.success('Message deleted — Ctrl+Z to undo')
     } catch (error) {
       // Rollback local removal on failure
       if (originalIndex !== -1) {

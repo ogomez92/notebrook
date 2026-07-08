@@ -11,12 +11,6 @@ export const useAppStore = defineStore('app', () => {
   const unsentMessages = ref<UnsentMessage[]>([])
   const settings = ref<AppSettings>({
     soundEnabled: true,
-    speechEnabled: true,
-    ttsEnabled: true,
-    ttsRate: 1,
-    ttsPitch: 1,
-    ttsVolume: 1,
-    selectedVoiceURI: null,
     defaultChannelId: null,
     theme: 'auto'
   })

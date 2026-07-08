@@ -3,14 +3,14 @@ import { websocketService } from '@/services/websocket'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import { useAudio } from '@/composables/useAudio'
+import { useAnnouncer } from '@/composables/useAnnouncer'
 import type { Channel, ExtendedMessage, FileAttachment } from '@/types'
 
 export function useWebSocket() {
   const appStore = useAppStore()
   const authStore = useAuthStore()
   const toastStore = useToastStore()
-  const { announceMessage } = useAudio()
+  const { announce } = useAnnouncer()
 
   const handleMessageCreated = (data: any) => {
     console.log('WebSocket: Message created event received:', data)
@@ -36,8 +36,8 @@ export function useWebSocket() {
     
     // Announce new message for accessibility
     const channel = appStore.channels.find(c => c.id === message.channel_id)
-    if (channel && appStore.settings.ttsEnabled) {
-      announceMessage(message.content, channel.name)
+    if (channel) {
+      announce(`New message in ${channel.name}: ${message.content}`)
     }
   }
 

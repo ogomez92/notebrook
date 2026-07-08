@@ -85,12 +85,6 @@ export interface UnsentMessage {
 
 export interface AppSettings {
   soundEnabled: boolean
-  speechEnabled: boolean
-  ttsEnabled: boolean
-  ttsRate: number
-  ttsPitch: number
-  ttsVolume: number
-  selectedVoiceURI: string | null
   defaultChannelId: number | null
   theme: 'light' | 'dark' | 'auto'
   serverUrl?: string | null

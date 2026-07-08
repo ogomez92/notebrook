@@ -105,10 +105,9 @@
             Copy Content
           </BaseButton>
           
-          <BaseButton 
-            @click="readAloud" 
+          <BaseButton
+            @click="readAloud"
             variant="secondary"
-            :disabled="!ttsEnabled"
           >
             Read Aloud
           </BaseButton>
@@ -194,6 +193,7 @@ import { ref, computed, nextTick, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
 import { useAudio } from '@/composables/useAudio'
+import { useAnnouncer } from '@/composables/useAnnouncer'
 import { formatTimestampForScreenReader } from '@/utils/time'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseTextarea from '@/components/base/BaseTextarea.vue'
@@ -216,7 +216,8 @@ const props = defineProps<Props>()
 
 const appStore = useAppStore()
 const toastStore = useToastStore()
-const { speak, playSound } = useAudio()
+const { playSound } = useAudio()
+const { announce } = useAnnouncer()
 
 // Component state
 const isEditing = ref(false)
@@ -257,9 +258,7 @@ const canSave = computed(() => {
          editedContent.value.trim() !== props.message.content
 })
 
-const ttsEnabled = computed(() => appStore.settings.ttsEnabled)
-
-const availableChannels = computed(() => 
+const availableChannels = computed(() =>
   appStore.channels.filter(channel => channel.id !== props.message.channel_id)
 )
 
@@ -332,17 +331,9 @@ const copyMessage = async () => {
   }
 }
 
-const readAloud = async () => {
-  if (appStore.settings.ttsEnabled) {
-    try {
-      await speak(props.message.content)
-      toastStore.info('Reading message aloud')
-    } catch (error) {
-      toastStore.error('Failed to read message aloud')
-    }
-  } else {
-    toastStore.info('Text-to-speech is disabled')
-  }
+const readAloud = () => {
+  announce(props.message.content)
+  toastStore.info('Reading message aloud')
 }
 
 const downloadFile = () => {

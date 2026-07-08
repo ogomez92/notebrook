@@ -155,6 +155,8 @@ import { useToastStore } from '@/stores/toast'
 import { useOfflineSync } from '@/composables/useOfflineSync'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { useUndo } from '@/composables/useUndo'
+import { useAnnouncer } from '@/composables/useAnnouncer'
 import { useAudio } from '@/composables/useAudio'
 import { formatTimestampForScreenReader } from '@/utils/time'
 import { apiService } from '@/services/api'
@@ -185,7 +187,9 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
 const { sendMessage: sendMessageOffline } = useOfflineSync()
-const { playWater, playSent, playSound, speak, stopSpeaking, isSpeaking } = useAudio()
+const { playWater, playSent, playSound } = useAudio()
+const { recordMessageDeletion, undoLastDelete } = useUndo()
+const { announce } = useAnnouncer()
 
 // Set up services - ensure token and URL are properly set
 if (authStore.token) {
@@ -242,6 +246,30 @@ const setupKeyboardShortcuts = () => {
     handler: () => { showSearchDialog.value = true }
   })
   
+  // Ctrl+Z / Cmd+Z - Undo last delete (re-adds most recently deleted message;
+  // repeat to walk back down the stack). Marked global so it works from anywhere,
+  // including while the message input is focused. The `when` guard backs off when
+  // you're actively editing non-empty text so the browser's own text-undo wins.
+  const notEditingText = () => {
+    const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null
+    const isTextField = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
+    return !(isTextField && !!el!.value && el!.value.length > 0)
+  }
+  addShortcut({
+    key: 'z',
+    ctrlKey: true,
+    global: true,
+    when: notEditingText,
+    handler: () => { undoLastDelete() }
+  })
+  addShortcut({
+    key: 'z',
+    metaKey: true,
+    global: true,
+    when: notEditingText,
+    handler: () => { undoLastDelete() }
+  })
+
   // Ctrl+K - Channel selector focus
   addShortcut({
     key: 'k',
@@ -288,28 +316,6 @@ const setupKeyboardShortcuts = () => {
   addShortcut({
     key: ' ',
     handler: () => { messageInput.value?.focus() }
-  })
-  
-  // Ctrl+Shift+T - Toggle TTS
-  addShortcut({
-    key: 't',
-    ctrlKey: true,
-    shiftKey: true,
-    handler: () => {
-      appStore.updateSettings({ ttsEnabled: !appStore.settings.ttsEnabled })
-      toastStore.info(`TTS ${appStore.settings.ttsEnabled ? 'enabled' : 'disabled'}`)
-    }
-  })
-  
-  // Escape - Stop speaking
-  addShortcut({
-    key: 'escape',
-    handler: () => {
-      if (isSpeaking.value) {
-        stopSpeaking()
-        toastStore.info('Speech stopped')
-      }
-    }
   })
   
   // Shift+Enter - Open message dialog for focused message
@@ -496,11 +502,7 @@ const announceLastMessage = (position: number) => {
   const announcement = `${message.content}; sent ${timeStr}`
 
   toastStore.info(announcement)
-  
-  // Also speak if TTS is enabled
-  if (appStore.settings.ttsEnabled) {
-    speak(announcement)
-  }
+  announce(announcement)
 }
 
 const scrollToBottom = () => {
@@ -562,16 +564,24 @@ const handleEditMessage = async (messageId: number, content: string) => {
 const handleDeleteMessage = async (messageId: number) => {
   try {
     if (!appStore.currentChannelId) return
-    
+
+    // Capture the message before deletion so we can re-add it on undo.
+    const deletedMessage = appStore.currentMessages.find(m => m.id === messageId)
+
     await apiService.deleteMessage(appStore.currentChannelId, messageId)
-    
+
     // Remove the message from the local store
     const messageIndex = appStore.currentMessages.findIndex(m => m.id === messageId)
     if (messageIndex !== -1) {
       appStore.currentMessages.splice(messageIndex, 1)
     }
-    
-    toastStore.success('Message deleted successfully')
+
+    // Server delete confirmed — record it so Ctrl+Z can re-add it.
+    if (deletedMessage) {
+      recordMessageDeletion(deletedMessage, deletedMessage.channel_id ?? appStore.currentChannelId)
+    }
+
+    toastStore.success('Message deleted — Ctrl+Z to undo')
     handleCloseMessageDialog()
     
   } catch (error) {

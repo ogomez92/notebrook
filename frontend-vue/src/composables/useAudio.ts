@@ -1,4 +1,4 @@
-import { ref, computed, readonly } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 interface AudioRecording {
@@ -42,11 +42,6 @@ export function useAudio() {
   let recordingChunks: Blob[] = []
   let recordingStartTime: number = 0
   let recordingInterval: number | null = null
-
-  // Text-to-speech state
-  const isSpeaking = ref(false)
-  const availableVoices = ref<SpeechSynthesisVoice[]>([])
-  const selectedVoice = ref<SpeechSynthesisVoice | null>(null)
 
   // Initialize audio context
   const initAudioContext = async () => {
@@ -325,88 +320,6 @@ export function useAudio() {
     recording.value.currentTime = 0
   }
 
-  // Text-to-speech functions
-  const loadVoices = () => {
-    const voices = speechSynthesis.getVoices()
-    availableVoices.value = voices
-    
-    // Select default voice (prefer English voices)
-    if (!selectedVoice.value && voices.length > 0) {
-      const englishVoice = voices.find(voice => voice.lang.startsWith('en'))
-      selectedVoice.value = englishVoice || voices[0] || null
-    }
-  }
-
-  const speak = (text: string, options: { rate?: number, pitch?: number, volume?: number } = {}) => {
-    if (!appStore.settings.ttsEnabled) return Promise.resolve()
-    
-    return new Promise<void>((resolve, reject) => {
-      if ('speechSynthesis' in window) {
-        // Stop any current speech
-        speechSynthesis.cancel()
-        
-        const utterance = new SpeechSynthesisUtterance(text)
-        
-        // Set voice if available
-        if (selectedVoice.value) {
-          utterance.voice = selectedVoice.value
-        }
-        
-        // Apply options
-        utterance.rate = options.rate || appStore.settings.ttsRate || 1
-        utterance.pitch = options.pitch || appStore.settings.ttsPitch || 1
-        utterance.volume = options.volume || appStore.settings.ttsVolume || 1
-        
-        utterance.onstart = () => {
-          isSpeaking.value = true
-        }
-        
-        utterance.onend = () => {
-          isSpeaking.value = false
-          resolve()
-        }
-        
-        utterance.onerror = (event) => {
-          isSpeaking.value = false
-          console.error('Speech synthesis error:', event.error)
-          reject(new Error(`Speech synthesis failed: ${event.error}`))
-        }
-        
-        speechSynthesis.speak(utterance)
-      } else {
-        reject(new Error('Speech synthesis not supported'))
-      }
-    })
-  }
-
-  const stopSpeaking = () => {
-    if ('speechSynthesis' in window) {
-      speechSynthesis.cancel()
-      isSpeaking.value = false
-    }
-  }
-
-  const setVoice = (voice: SpeechSynthesisVoice) => {
-    selectedVoice.value = voice
-    appStore.updateSettings({ selectedVoiceURI: voice.voiceURI })
-  }
-
-  // Announce message for accessibility
-  const announceMessage = async (content: string, channel?: string) => {
-    if (!appStore.settings.ttsEnabled) return
-    
-    let textToSpeak = content
-    if (channel) {
-      textToSpeak = `New message in ${channel}: ${content}`
-    }
-    
-    try {
-      await speak(textToSpeak)
-    } catch (error) {
-      console.error('Failed to announce message:', error)
-    }
-  }
-
   // Computed
   const canRecord = computed(() => {
     return navigator.mediaDevices && navigator.mediaDevices.getUserMedia
@@ -448,22 +361,6 @@ export function useAudio() {
       for (const event of gestureEvents) {
         document.addEventListener(event, initializeAudio)
       }
-      
-      // Initialize voices for speech synthesis
-      if ('speechSynthesis' in window) {
-        loadVoices()
-        // Voices may not be immediately available
-        speechSynthesis.addEventListener('voiceschanged', loadVoices)
-        
-        // Restore selected voice from settings
-        if (appStore.settings.selectedVoiceURI) {
-          const voices = speechSynthesis.getVoices()
-          const savedVoice = voices.find(v => v.voiceURI === appStore.settings.selectedVoiceURI)
-          if (savedVoice) {
-            selectedVoice.value = savedVoice
-          }
-        }
-      }
     }
   }
   
@@ -475,27 +372,18 @@ export function useAudio() {
     recording,
     canRecord,
     recordingDurationFormatted,
-    isSpeaking: readonly(isSpeaking),
-    availableVoices: readonly(availableVoices),
-    selectedVoice: readonly(selectedVoice),
-    
+
     // Audio playback
     playSound,
     playWater,
     playSent,
-    
+
     // Voice recording
     startRecording,
     stopRecording,
     playRecording,
     clearRecording,
-    
-    // Text-to-speech
-    speak,
-    stopSpeaking,
-    setVoice,
-    announceMessage,
-    
+
     // Audio context
     initAudioContext
   }

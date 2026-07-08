@@ -8,6 +8,11 @@ interface ShortcutConfig {
   metaKey?: boolean
   handler: () => void
   preventDefault?: boolean
+  // Fire even when an input/textarea is focused (like the Ctrl+Shift+* shortcuts).
+  global?: boolean
+  // Extra guard: if provided and it returns false, the shortcut is ignored
+  // entirely (no preventDefault, no handler) so the keypress behaves natively.
+  when?: () => boolean
 }
 
 export function useKeyboardShortcuts() {
@@ -41,8 +46,15 @@ export function useKeyboardShortcuts() {
     const shortcut = shortcuts.value.get(shortcutKey)
 
     if (shortcut) {
+      // Optional per-shortcut guard. Returning false makes the keypress behave
+      // natively (e.g. let the browser's own undo run while editing text).
+      if (shortcut.when && !shortcut.when()) {
+        return
+      }
+
       // Allow certain shortcuts to work globally, even in input fields
-      const isGlobalShortcut = (shortcut.ctrlKey && shortcut.shiftKey) ||
+      const isGlobalShortcut = shortcut.global === true ||
+                              (shortcut.ctrlKey && shortcut.shiftKey) ||
                               shortcut.altKey ||
                               shortcut.key === 'escape' ||
                               (shortcut.ctrlKey && shortcut.key === 'k')

@@ -13,100 +13,8 @@
           />
           <span>Enable sound effects</span>
         </label>
-        
-        <label class="setting-item">
-          <input 
-            type="checkbox" 
-            v-model="localSettings.speechEnabled"
-            class="checkbox"
-          />
-          <span>Enable speech synthesis (deprecated)</span>
-        </label>
       </div>
-      
-      <div class="setting-group">
-        <h3>Text-to-Speech</h3>
-        
-        <label class="setting-item">
-          <input 
-            type="checkbox" 
-            v-model="localSettings.ttsEnabled"
-            class="checkbox"
-          />
-          <span>Enable text-to-speech announcements</span>
-        </label>
-        
-        <div class="setting-item" v-if="localSettings.ttsEnabled">
-          <label for="voice-select">Voice</label>
-          <select 
-            id="voice-select" 
-            v-model="selectedVoiceURI"
-            class="select"
-            @change="handleVoiceChange"
-          >
-            <option value="" disabled>Select a voice...</option>
-            <option 
-              v-for="voice in availableVoices" 
-              :key="voice.voiceURI"
-              :value="voice.voiceURI"
-            >
-              {{ voice.name }} ({{ voice.lang }})
-            </option>
-          </select>
-        </div>
-        
-        <div class="setting-item" v-if="localSettings.ttsEnabled">
-          <label for="rate-slider">Speech Rate: {{ localSettings.ttsRate.toFixed(1) }}</label>
-          <input 
-            id="rate-slider"
-            type="range" 
-            min="0.5" 
-            max="2" 
-            step="0.1"
-            v-model.number="localSettings.ttsRate"
-            class="slider"
-          />
-        </div>
-        
-        <div class="setting-item" v-if="localSettings.ttsEnabled">
-          <label for="pitch-slider">Speech Pitch: {{ localSettings.ttsPitch.toFixed(1) }}</label>
-          <input 
-            id="pitch-slider"
-            type="range" 
-            min="0" 
-            max="2" 
-            step="0.1"
-            v-model.number="localSettings.ttsPitch"
-            class="slider"
-          />
-        </div>
-        
-        <div class="setting-item" v-if="localSettings.ttsEnabled">
-          <label for="volume-slider">Speech Volume: {{ localSettings.ttsVolume.toFixed(1) }}</label>
-          <input 
-            id="volume-slider"
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.1"
-            v-model.number="localSettings.ttsVolume"
-            class="slider"
-          />
-        </div>
-        
-        <div class="setting-item" v-if="localSettings.ttsEnabled">
-          <BaseButton 
-            type="button"
-            variant="secondary"
-            size="sm"
-            @click="testSpeech"
-            :disabled="!selectedVoiceURI"
-          >
-            Test Speech
-          </BaseButton>
-        </div>
-      </div>
-      
+
       <div class="setting-group">
         <h3>Appearance</h3>
         
@@ -318,7 +226,6 @@ import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import { useAudio } from '@/composables/useAudio'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
 import { getExporter, downloadBlob, type ExportFormat } from '@/utils/export'
@@ -334,7 +241,6 @@ const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
-const { availableVoices, speak, setVoice } = useAudio()
 
 const isSaving = ref(false)
 const isResetting = ref(false)
@@ -345,7 +251,6 @@ const exportFormat = ref<ExportFormat>('markdown')
 const showResetConfirm = ref(false)
 const showRestoreConfirm = ref(false)
 const pendingRestoreFile = ref<File | null>(null)
-const selectedVoiceURI = ref('')
 const soundInput = ref()
 const restoreInput = ref<HTMLInputElement>()
 
@@ -353,35 +258,9 @@ const restoreInput = ref<HTMLInputElement>()
 const currentServerUrl = computed(() => authStore.serverUrl)
 const localSettings = reactive<AppSettings>({
   soundEnabled: true,
-  speechEnabled: true,
-  ttsEnabled: true,
-  ttsRate: 1,
-  ttsPitch: 1,
-  ttsVolume: 1,
-  selectedVoiceURI: null,
   defaultChannelId: null,
   theme: 'auto'
 })
-
-const handleVoiceChange = () => {
-  const voice = availableVoices.value.find(v => v.voiceURI === selectedVoiceURI.value)
-  if (voice) {
-    setVoice(voice)
-    localSettings.selectedVoiceURI = voice.voiceURI
-  }
-}
-
-const testSpeech = async () => {
-  try {
-    await speak('This is a test of the text-to-speech system.', {
-      rate: localSettings.ttsRate,
-      pitch: localSettings.ttsPitch,
-      volume: localSettings.ttsVolume
-    })
-  } catch (error) {
-    toastStore.error('Speech test failed')
-  }
-}
 
 const handleSave = async () => {
   isSaving.value = true
@@ -523,9 +402,6 @@ const handleExport = async () => {
 onMounted(() => {
   // Copy current settings to local state
   Object.assign(localSettings, appStore.settings)
-  
-  // Set up voice selection
-  selectedVoiceURI.value = appStore.settings.selectedVoiceURI || ''
   soundInput.value.focus();
 })
 </script>

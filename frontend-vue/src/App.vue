@@ -1,6 +1,9 @@
 <template>
   <div id="app">
     <router-view />
+    <!-- ARIA live regions for screen-reader announcements (no Web Speech TTS) -->
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ politeMessage }}</div>
+    <div class="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{{ assertiveMessage }}</div>
     <!-- Toast notifications -->
     <div class="toast-container" v-if="toastStore.toasts.length > 0">
       <div 
@@ -17,8 +20,10 @@
 
 <script setup lang="ts">
 import { useToastStore } from '@/stores/toast'
+import { useAnnouncer } from '@/composables/useAnnouncer'
 
 const toastStore = useToastStore()
+const { politeMessage, assertiveMessage } = useAnnouncer()
 
 // Authentication is now handled by the router guard in main.ts
 </script>
