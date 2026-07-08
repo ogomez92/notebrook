@@ -75,9 +75,6 @@ router.post('/', authenticate, upload.single('database'), async (req: Request, r
     const files = tableNames.includes('files')
       ? uploadedDb.prepare('SELECT * FROM files').all()
       : [];
-    const meta = tableNames.includes('meta')
-      ? uploadedDb.prepare('SELECT * FROM meta').all()
-      : [];
 
     uploadedDb.close();
 
@@ -93,38 +90,60 @@ router.post('/', authenticate, upload.single('database'), async (req: Request, r
       // Reset auto-increment counters
       db.exec(`DELETE FROM sqlite_sequence WHERE name IN ('channels', 'messages', 'files')`);
 
-      // Insert channels
+      // Insert channels. Column names are the schema's camelCase, and each bind
+      // object is built explicitly so a backup from a slightly different schema
+      // version (missing/extra columns) still restores cleanly.
       if (channels.length > 0) {
         const insertChannel = db.prepare(`
-          INSERT INTO channels (id, name, created_at) VALUES (@id, @name, @created_at)
+          INSERT INTO channels (id, name, createdAt) VALUES (@id, @name, @createdAt)
         `);
-        for (const channel of channels) {
-          insertChannel.run(channel);
+        for (const channel of channels as any[]) {
+          insertChannel.run({
+            id: channel.id,
+            name: channel.name,
+            createdAt: channel.createdAt ?? null
+          });
         }
       }
 
       // Insert files first (messages reference files)
       if (files.length > 0) {
         const insertFile = db.prepare(`
-          INSERT INTO files (id, channel_id, file_path, file_type, file_size, original_name, created_at)
-          VALUES (@id, @channel_id, @file_path, @file_type, @file_size, @original_name, @created_at)
+          INSERT INTO files (id, channelId, filePath, fileType, fileSize, originalName, createdAt)
+          VALUES (@id, @channelId, @filePath, @fileType, @fileSize, @originalName, @createdAt)
         `);
-        for (const file of files) {
-          insertFile.run(file);
+        for (const file of files as any[]) {
+          insertFile.run({
+            id: file.id,
+            channelId: file.channelId ?? null,
+            filePath: file.filePath ?? null,
+            fileType: file.fileType ?? null,
+            fileSize: file.fileSize ?? null,
+            originalName: file.originalName ?? null,
+            createdAt: file.createdAt ?? null
+          });
         }
       }
 
       // Insert messages
       if (messages.length > 0) {
         const insertMessage = db.prepare(`
-          INSERT INTO messages (id, channel_id, content, file_id, checked, created_at)
-          VALUES (@id, @channel_id, @content, @file_id, @checked, @created_at)
+          INSERT INTO messages (id, channelId, content, fileId, checked, createdAt)
+          VALUES (@id, @channelId, @content, @fileId, @checked, @createdAt)
         `);
-        for (const message of messages) {
-          insertMessage.run(message);
+        for (const message of messages as any[]) {
+          insertMessage.run({
+            id: message.id,
+            channelId: message.channelId ?? null,
+            content: message.content ?? null,
+            fileId: message.fileId ?? null,
+            checked: message.checked ?? null,
+            createdAt: message.createdAt ?? null
+          });
         }
 
-        // Rebuild FTS index
+        // The insert triggers repopulate messages_fts as rows are inserted;
+        // rebuild once more to guarantee the index matches the restored data.
         if (FTS5Enabled) {
           db.exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`);
         }
