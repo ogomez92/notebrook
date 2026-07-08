@@ -1,10 +1,15 @@
 import type { Request, Response } from "express";
+import path from "path";
 import * as FileService from "../services/file-service";
+import { UPLOAD_DIR } from "../config";
 import { logger } from "../globals";
 
 export const uploadFile = async (req: Request, res: Response) => {
     const { channelId, messageId } = req.params;
-    const filePath = (req.file as Express.Multer.File).path;
+    // Persist a path relative to UPLOAD_DIR (e.g. "5/report-ab12cd34.pdf") so the
+    // record stays valid even if the uploads directory is moved or remounted.
+    const absolutePath = (req.file as Express.Multer.File).path;
+    const filePath = path.relative(UPLOAD_DIR, absolutePath);
     const fileType = req.file?.mimetype;
     const fileSize = req.file?.size;
     const originalName = req.file?.originalname;

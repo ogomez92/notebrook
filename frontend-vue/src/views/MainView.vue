@@ -147,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -158,6 +158,7 @@ import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useUndo } from '@/composables/useUndo'
 import { useAnnouncer } from '@/composables/useAnnouncer'
 import { useAudio } from '@/composables/useAudio'
+import { useFileUpload } from '@/composables/useFileUpload'
 import { formatTimestampForScreenReader } from '@/utils/time'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
@@ -190,6 +191,7 @@ const { sendMessage: sendMessageOffline } = useOfflineSync()
 const { playWater, playSent, playSound } = useAudio()
 const { recordMessageDeletion, undoLastDelete } = useUndo()
 const { announce } = useAnnouncer()
+const { uploadFiles } = useFileUpload()
 
 // Set up services - ensure token and URL are properly set
 if (authStore.token) {
@@ -413,6 +415,35 @@ const selectChannel = async (channelId: number) => {
   nextTick(() => {
     messageInput.value?.focus()
   })
+}
+
+// Paste-to-upload: Ctrl/Cmd+V with file(s) on the clipboard (e.g. a copied
+// image or file) uploads them to the current channel. Text-only pastes are left
+// untouched so normal typing/pasting still works.
+const handlePaste = async (event: ClipboardEvent) => {
+  if (!appStore.currentChannelId) return
+
+  const items = event.clipboardData?.items
+  if (!items) return
+
+  const files: File[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item && item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+  }
+  if (files.length === 0) return // nothing to upload — let the default paste happen
+
+  event.preventDefault()
+
+  const count = await uploadFiles(files)
+  if (count > 0) {
+    playSent()
+    scrollToBottom()
+    toastStore.success(count === 1 ? 'Pasted file uploaded' : `${count} pasted files uploaded`)
+  }
 }
 
 const handleSendMessage = async (content: string) => {
@@ -662,8 +693,9 @@ onMounted(async () => {
   // 3. WebSocket connection (will gracefully fail if offline)
   useWebSocket()
   
-  // 4. Set up keyboard shortcuts
+  // 4. Set up keyboard shortcuts + paste-to-upload
   setupKeyboardShortcuts()
+  document.addEventListener('paste', handlePaste)
   
   // 5. Auto-select first channel if none selected and we have channels
   if (!appStore.currentChannelId && appStore.channels.length > 0) {
@@ -693,6 +725,10 @@ onMounted(async () => {
   // Cleanup interval on unmount
   const cleanup = () => clearInterval(syncInterval)
   window.addEventListener('beforeunload', cleanup)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('paste', handlePaste)
 })
 </script>
 

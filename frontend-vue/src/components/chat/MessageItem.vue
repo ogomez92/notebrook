@@ -208,9 +208,16 @@ const extractUrls = (text: string): string[] => {
   return [...new Set(matches)]
 }
 
-// Handle Shift+Enter: open URL(s) or fall back to edit
+// Handle Shift+Enter: download an attached file, else open URL(s), else edit
 const handleOpenUrl = () => {
   if (props.isUnsent) return
+
+  // If this message carries a file attachment, Shift+Enter downloads it.
+  if (fileAttachment.value) {
+    apiService.downloadFile(fileAttachment.value)
+    toastStore.success(`Downloading ${fileAttachment.value.original_name}`)
+    return
+  }
 
   const urls = extractUrls(props.message.content)
 

@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { events } from "../globals";
+import * as FileService from "./file-service";
 
 export const createChannel = async (name: string) => {
     const query = db.prepare(`INSERT INTO channels (name) VALUES ($name)`);
@@ -9,9 +10,14 @@ export const createChannel = async (name: string) => {
 }
 
 export const deleteChannel = async (id: string) => {
+    // Delete the channel's files from disk first. The ON DELETE CASCADE below
+    // clears the files/messages rows, but SQLite can't remove the files on disk,
+    // so we handle those ourselves.
+    await FileService.deleteFilesForChannel(id);
     const query = db.prepare(`DELETE FROM channels WHERE id = ($channelId)`);
     const result = query.run({channelId: id});
-    // No need to manually delete messages and files as they are set to cascade on delete in the schema
+    // Message and file rows are removed by the schema's ON DELETE CASCADE
+    // (better-sqlite3 enables foreign keys by default).
     events  .emit('channel-deleted', id);
     return result;
 }

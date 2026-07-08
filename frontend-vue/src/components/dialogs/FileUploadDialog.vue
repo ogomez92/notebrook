@@ -77,7 +77,7 @@
 import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
-import { apiService } from '@/services/api'
+import { useFileUpload } from '@/composables/useFileUpload'
 import BaseButton from '@/components/base/BaseButton.vue'
 
 const emit = defineEmits<{
@@ -87,6 +87,7 @@ const emit = defineEmits<{
 
 const appStore = useAppStore()
 const toastStore = useToastStore()
+const { uploadFiles: uploadFilesToServer } = useFileUpload()
 
 const fileInput = ref<HTMLInputElement>()
 const selectedFiles = ref<File[]>([])
@@ -134,55 +135,33 @@ const formatFileSize = (bytes: number): string => {
 
 const uploadFiles = async () => {
   if (!appStore.currentChannelId || selectedFiles.value.length === 0) return
-  
+
   isUploading.value = true
   error.value = ''
-  
+
   try {
-    // For single file, use the filename as message content
-    // For multiple files, show count
-    const messageContent = selectedFiles.value.length === 1
-      ? selectedFiles.value[0]?.name || 'Uploaded file'
-      : `Uploaded ${selectedFiles.value.length} files`
+    // Each selected file becomes its own message (backend: one file per message).
+    const total = selectedFiles.value.length
+    const successCount = await uploadFilesToServer(selectedFiles.value, {
+      onProgress: (index, percent) => { uploadProgress.value[index] = percent }
+    })
 
-    // Create a message first to attach files to
-    const message = await apiService.createMessage(appStore.currentChannelId, messageContent)
-
-    // Upload the first file (backend uses single file per message)
-    const file = selectedFiles.value[0]
-
-    if (!file) {
-      throw new Error('No file selected')
+    if (successCount > 0) {
+      toastStore.success(
+        successCount === 1
+          ? 'File uploaded successfully!'
+          : `${successCount} of ${total} files uploaded successfully!`
+      )
     }
 
-    try {
-      const uploadedFile = await apiService.uploadFile(appStore.currentChannelId, message.id, file)
-      uploadProgress.value[0] = 100
-
-      // Immediately update the local message with file metadata
-      const updatedMessage = {
-        ...message,
-        fileId: uploadedFile.id,
-        filePath: uploadedFile.file_path,
-        fileType: uploadedFile.file_type,
-        fileSize: uploadedFile.file_size,
-        originalName: uploadedFile.original_name,
-        fileCreatedAt: uploadedFile.created_at
-      }
-
-      // Update the message in the store
-      appStore.updateMessage(message.id, updatedMessage)
-
-      toastStore.success('File uploaded successfully!')
-
-    } catch (fileError) {
-      console.error(`Failed to upload ${file.name}:`, fileError)
-      toastStore.error(`Failed to upload ${file.name}`)
-      uploadProgress.value[0] = 0
+    if (successCount < total) {
+      error.value = successCount === 0
+        ? 'Upload failed. Please try again.'
+        : 'Some files failed to upload.'
     }
-    
+
     emit('uploaded')
-    
+
   } catch (err) {
     console.error('Upload failed:', err)
     error.value = 'Upload failed. Please try again.'

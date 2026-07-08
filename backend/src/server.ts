@@ -9,6 +9,10 @@ const PORT = process.env.PORT || 3000;
 
 const server = createServer(app);
 
+// Large uploads (up to 10GB) can take a long time on slow links; disable the
+// default 5-minute request timeout so they aren't cut off mid-transfer.
+server.requestTimeout = 0;
+
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws: WebSocket) => {

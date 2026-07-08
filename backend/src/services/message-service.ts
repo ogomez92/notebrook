@@ -1,5 +1,6 @@
 import { db, FTS5Enabled } from "../db";
 import { events } from "../globals";
+import * as FileService from "./file-service";
 
 export const createMessage = async (channelId: string, content: string) => {
   const query = db.prepare(`INSERT INTO messages (channelId, content, checked) VALUES ($channelId, $content, NULL)`);
@@ -34,6 +35,10 @@ export const updateMessage = async (messageId: string, content: string, append: 
 }
 
 export const deleteMessage = async (messageId: string) => {
+  // Remove any attached file (from disk and the files table) before the message
+  // itself, so deleting a message never leaves an orphaned upload behind.
+  await FileService.deleteFileForMessage(messageId);
+
   const query = db.prepare(`DELETE FROM messages WHERE id = $id`);
   const result = query.run({ id: messageId });
 

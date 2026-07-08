@@ -168,6 +168,34 @@ class ApiService {
     return `${this.baseUrl}/uploads/${filePath.replace(/^.*\/uploads\//, '')}`
   }
 
+  // Trigger a browser download of an uploaded file attachment
+  async downloadFile(file: Pick<FileAttachment, 'file_path' | 'original_name'>): Promise<void> {
+    const url = this.getFileUrl(file.file_path)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+      }
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = file.original_name
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
+    } catch (error) {
+      console.error('Failed to download file:', error)
+      // Fallback to a direct link download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = file.original_name
+      link.target = '_blank'
+      link.click()
+    }
+  }
+
   // Backup - returns a download URL
   async downloadBackup(): Promise<void> {
     const response = await fetch(`${this.baseUrl}/backup`, {
