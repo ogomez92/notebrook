@@ -52,10 +52,18 @@ export function useFileUpload() {
 
           options.onProgress?.(i, 100)
 
-          // Immediately reflect the file metadata on the local message so it
-          // renders without waiting for a round-trip / websocket event.
-          const updatedMessage = {
-            ...message,
+          // Add the new message to the store immediately so it shows without
+          // waiting for a resync. addMessage upserts by id, so this merges
+          // cleanly if the websocket also delivers the same message. (updateMessage
+          // alone was a no-op here — the message isn't in the store yet — which
+          // left pasted/dropped uploads invisible until the next send/sync.)
+          const newMessage = {
+            id: message.id,
+            channel_id: channelId,
+            content: message.content ?? file.name,
+            created_at: uploadedFile.created_at ?? new Date().toISOString(),
+            checked: null,
+            file_id: uploadedFile.id,
             fileId: uploadedFile.id,
             filePath: uploadedFile.file_path,
             fileType: uploadedFile.file_type,
@@ -63,7 +71,7 @@ export function useFileUpload() {
             originalName: uploadedFile.original_name,
             fileCreatedAt: uploadedFile.created_at
           }
-          appStore.updateMessage(message.id, updatedMessage)
+          appStore.addMessage(newMessage)
 
           successCount++
         } catch (fileError) {
