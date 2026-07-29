@@ -15,6 +15,7 @@ export const OPENAI_MODEL = process.env["OPENAI_MODEL"] || "gpt-4o";
 export const OLLAMA_URL= process.env["OLLAMA_URL"] || "http://localhost:11434";
 export const OLLAMA_MODEL= process.env["OLLAMA_MODEL"] || "moondream";
 export const PORT = parseInt(process.env["PORT"]!) || 3000;
+export const FEED_CHANNEL = process.env["FEED_CHANNEL"] || "feeds";
 export const USE_SSL = process.env["USE_SSL"] === "1" ? true : false;
 export const SSL_KEY = process.env["SSL_KEY"] || "";
 export const SSL_CERT = process.env["SSL_CERT"] || "";

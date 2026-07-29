@@ -9,6 +9,17 @@ export const createChannel = async (name: string) => {
     return { id: result.lastInsertRowid, name };
 }
 
+export const getOrCreateChannelByName = async (name: string) => {
+    const query = db.prepare(`SELECT id, name FROM channels WHERE name = $name`);
+    const existing = query.get({ name: name }) as { id: number, name: string } | undefined;
+    if (existing) {
+        return existing;
+    }
+    // No await between the lookup above and this insert, and better-sqlite3 is
+    // synchronous, so two concurrent callers can't both create the channel.
+    return createChannel(name);
+}
+
 export const deleteChannel = async (id: string) => {
     // Delete the channel's files from disk first. The ON DELETE CASCADE below
     // clears the files/messages rows, but SQLite can't remove the files on disk,
