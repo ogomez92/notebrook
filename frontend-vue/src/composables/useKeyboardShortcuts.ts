@@ -31,7 +31,16 @@ export function useKeyboardShortcuts() {
 
   const handleKeydown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement
-    const isInInputField = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA'
+    const isInInputField =
+      target?.tagName === 'INPUT' ||
+      target?.tagName === 'TEXTAREA' ||
+      target?.tagName === 'SELECT' ||
+      target?.isContentEditable === true
+
+    // A modal owns the screen while it's up: plain keys like Space belong to
+    // whatever is inside it (a summary toggle, a dropdown), not to shortcuts
+    // acting on the chat behind it. Global shortcuts still get through.
+    const isInDialog = !!target?.closest?.('[aria-modal="true"]')
 
     const config: ShortcutConfig = {
       key: event.key.toLowerCase(),
@@ -59,8 +68,8 @@ export function useKeyboardShortcuts() {
                               shortcut.key === 'escape' ||
                               (shortcut.ctrlKey && shortcut.key === 'k')
 
-      // Skip shortcuts that shouldn't work in input fields
-      if (isInInputField && !isGlobalShortcut) {
+      // Skip shortcuts that shouldn't work in input fields or inside a modal
+      if ((isInInputField || isInDialog) && !isGlobalShortcut) {
         return
       }
       

@@ -5,7 +5,6 @@
         v-if="show"
         class="dialog-overlay"
         @click="handleOverlayClick"
-        @keydown.esc="handleClose"
         role="dialog"
         :aria-labelledby="titleId"
         aria-modal="true"
@@ -48,7 +47,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
+import { useDialogStack } from '@/composables/useDialogStack'
 
 interface Props {
   show: boolean
@@ -73,6 +73,8 @@ const dialogRef = ref<HTMLDivElement>()
 const titleId = computed(() => `dialog-title-${Math.random().toString(36).substr(2, 9)}`)
 const contentId = computed(() => `dialog-content-${Math.random().toString(36).substr(2, 9)}`)
 
+const { isTopmost, enter: enterDialogStack, leave: leaveDialogStack } = useDialogStack()
+
 const handleClose = () => {
   emit('close')
   emit('update:show', false)
@@ -87,7 +89,17 @@ const handleOverlayClick = () => {
 // Focus management
 let lastFocusedElement: HTMLElement | null = null
 
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'
+
 const trapFocus = (event: KeyboardEvent) => {
+  // One keypress, one dialog. Both guards earn their place: the stack picks the
+  // dialog on top, and defaultPrevented stops a second dialog acting on a key
+  // another already consumed — ordering alone can't prevent that, because Vue
+  // flushes the first dialog's close in a microtask *between* two document
+  // listeners, leaving the one underneath momentarily topmost mid-event.
+  if (event.defaultPrevented || !isTopmost()) return
+
   // Close on Escape regardless of focused element when dialog is open
   if (event.key === 'Escape') {
     event.preventDefault()
@@ -95,9 +107,9 @@ const trapFocus = (event: KeyboardEvent) => {
     return
   }
   if (event.key !== 'Tab') return
-  
+
   const focusableElements = dialogRef.value?.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    FOCUSABLE_SELECTOR
   ) as NodeListOf<HTMLElement>
   
   if (!focusableElements || focusableElements.length === 0) return
@@ -121,15 +133,21 @@ const trapFocus = (event: KeyboardEvent) => {
 watch(() => props.show, async (isVisible) => {
   if (isVisible) {
     lastFocusedElement = document.activeElement as HTMLElement
-    document.body.style.overflow = 'hidden'
+    enterDialogStack()
     document.addEventListener('keydown', trapFocus)
-    
+
     await nextTick()
-    
-    // Focus [autofocus] first, then first focusable, else the dialog itself
+
+    // Focus [autofocus] first, then first focusable, else the dialog itself.
+    // Two queries, not one comma-joined selector: querySelector returns the
+    // first match in *document order*, which would hand focus to the header's
+    // close button rather than the field a dialog marked as its entry point.
     const root = dialogRef.value as HTMLElement | undefined
-    const selector = '[autofocus], button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    const firstFocusable = root?.querySelector(selector) as HTMLElement | null
+    const preferredTarget = () =>
+      (root?.querySelector('[autofocus]') as HTMLElement | null) ||
+      (root?.querySelector(FOCUSABLE_SELECTOR) as HTMLElement | null)
+
+    const firstFocusable = preferredTarget()
     if (firstFocusable) {
       firstFocusable.focus()
     } else {
@@ -140,20 +158,27 @@ watch(() => props.show, async (isVisible) => {
     setTimeout(() => {
       if (!root) return
       if (!root.contains(document.activeElement)) {
-        const retryTarget = (root.querySelector(selector) as HTMLElement) || root
+        const retryTarget = preferredTarget() || root
         retryTarget?.focus()
       }
     }, 0)
   } else {
-    document.body.style.overflow = ''
+    leaveDialogStack()
     document.removeEventListener('keydown', trapFocus)
-    
+
     // Restore focus to the element that was focused before the dialog opened
     if (lastFocusedElement) {
       lastFocusedElement.focus()
       lastFocusedElement = null
     }
   }
+})
+
+// A dialog can be torn down while still open (its parent view unmounting, say).
+// Leaving it on the stack would strand page scrolling and swallow Escape.
+onUnmounted(() => {
+  leaveDialogStack()
+  document.removeEventListener('keydown', trapFocus)
 })
 </script>
 

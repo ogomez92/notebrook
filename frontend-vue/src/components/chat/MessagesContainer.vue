@@ -6,6 +6,8 @@
       <MessageItem v-for="(message, index) in messages" :key="message.id" :message="message"
         :tabindex="index === focusedMessageIndex ? 0 : -1" :data-message-index="index"
         :aria-selected="index === focusedMessageIndex ? 'true' : 'false'"
+        :channel-name="showChannelNames ? channelNameFor(message.channel_id) : undefined"
+        :match-indices="highlights?.[message.id]"
         @focus="focusedMessageIndex = index"
         @open-dialog="emit('open-message-dialog', $event)"
         @open-dialog-edit="emit('open-message-dialog-edit', $event)"
@@ -15,7 +17,10 @@
       <MessageItem v-for="(unsentMsg, index) in unsentMessages" :key="unsentMsg.id" :message="unsentMsg"
         :is-unsent="true" :tabindex="(messages.length + index) === focusedMessageIndex ? 0 : -1"
         :aria-selected="(messages.length + index) === focusedMessageIndex ? 'true' : 'false'"
-        :data-message-index="messages.length + index" @focus="focusedMessageIndex = messages.length + index"
+        :data-message-index="messages.length + index"
+        :channel-name="showChannelNames ? channelNameFor(unsentMsg.channelId) : undefined"
+        :match-indices="highlights?.[unsentMsg.id]"
+        @focus="focusedMessageIndex = messages.length + index"
         @open-dialog="emit('open-message-dialog', $event)"
         @open-dialog-edit="emit('open-message-dialog-edit', $event)"
         @open-links="(links, msg) => emit('open-links', links, msg)" />
@@ -26,11 +31,27 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import MessageItem from './MessageItem.vue'
+import { useAppStore } from '@/stores/app'
 import type { ExtendedMessage, UnsentMessage } from '@/types'
+import { extractUrls } from '@/utils/urls'
 
 interface Props {
   messages: ExtendedMessage[]
-  unsentMessages: UnsentMessage[]
+  unsentMessages?: UnsentMessage[]
+  /**
+   * Pull focus into the list on mount and when new messages arrive. On for the
+   * live channel; off for lists the user is scanning from somewhere else (the
+   * search dialog keeps focus in its input until Enter).
+   */
+  autoFocus?: boolean
+  /** Which end `focusList()` jumps to — newest for a channel, best match first for search. */
+  focusEdge?: 'first' | 'last'
+  /** Override the listbox label. */
+  ariaLabel?: string
+  /** Fuzzy-match character positions to highlight, keyed by message id. */
+  highlights?: Record<string | number, number[]>
+  /** Label each message with its channel — for lists that span channels. */
+  showChannelNames?: boolean
 }
 
 const emit = defineEmits<{
@@ -40,7 +61,14 @@ const emit = defineEmits<{
   'open-links': [links: string[], message: ExtendedMessage | UnsentMessage]
 }>()
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  unsentMessages: () => [],
+  autoFocus: true,
+  focusEdge: 'last',
+  showChannelNames: false
+})
+
+const appStore = useAppStore()
 
 const containerRef = ref<HTMLElement>()
 const focusedMessageIndex = ref(0)
@@ -49,10 +77,16 @@ const focusedMessageIndex = ref(0)
 const allMessages = computed(() => [...props.messages, ...props.unsentMessages])
 const totalMessages = computed(() => allMessages.value.length)
 
+const channelNameFor = (channelId: number): string => {
+  const channel = appStore.channels.find(c => c.id === channelId)
+  return channel?.name || `Channel ${channelId}`
+}
+
 // ARIA labels for screen readers
 const messagesAriaLabel = computed(() => {
+  if (props.ariaLabel) return props.ariaLabel
+
   const total = totalMessages.value
-  const current = focusedMessageIndex.value + 1
 
   if (total === 0) {
     return 'Messages list, no messages'
@@ -159,6 +193,16 @@ const focusMessageById = (messageId: string | number) => {
   }
 }
 
+/**
+ * Move focus into the list, at whichever end `focusEdge` names. Returns false
+ * when there is nothing to focus, so callers can leave focus where it was.
+ */
+const focusList = (): boolean => {
+  if (totalMessages.value === 0) return false
+  focusMessage(props.focusEdge === 'first' ? 0 : totalMessages.value - 1)
+  return true
+}
+
 const isNearBottom = (threshold = 48) => {
   const el = containerRef.value
   if (!el) return true
@@ -173,9 +217,11 @@ const isInputActive = () => {
   return !!active.closest('.message-input') && active.classList.contains('base-textarea__field')
 }
 
+// Index of the focused message *in this container* — scoped, because the search
+// dialog renders a second list over the top of the channel's one.
 const getActiveMessageIndex = (): number | null => {
   const active = document.activeElement as HTMLElement | null
-  if (!active) return null
+  if (!active || !containerRef.value?.contains(active)) return null
   const el = active.closest('[data-message-index]') as HTMLElement | null
   if (!el) return null
   const idx = el.getAttribute('data-message-index')
@@ -196,6 +242,8 @@ const scrollToBottom = () => {
 watch(
   () => [props.messages.length, props.unsentMessages.length],
   ([newM, newU], [oldM = 0, oldU = 0]) => {
+    if (!props.autoFocus) return
+
     const oldTotal = (oldM ?? 0) + (oldU ?? 0)
     const newTotal = (newM ?? 0) + (newU ?? 0)
 
@@ -219,6 +267,17 @@ watch(
 // Reset focus when messages change significantly
 watch(() => totalMessages.value, (newTotal, oldTotal) => {
   if (newTotal === 0) return
+
+  // Non-autofocus lists (search results) get re-populated wholesale while the
+  // user is typing elsewhere. Keep the roving tabindex valid, but don't grab focus.
+  if (!props.autoFocus) {
+    const focusIsInList = getActiveMessageIndex() != null
+    if (!focusIsInList || focusedMessageIndex.value >= newTotal) {
+      focusedMessageIndex.value = props.focusEdge === 'first' ? 0 : newTotal - 1
+    }
+    return
+  }
+
   if (isInputActive()) return
   const current = focusedMessageIndex.value
   let nextIndex = current
@@ -234,6 +293,8 @@ watch(() => totalMessages.value, (newTotal, oldTotal) => {
 })
 
 onMounted(() => {
+  if (!props.autoFocus) return
+
   scrollToBottom()
   // Focus the last message on mount
   if (totalMessages.value > 0) {
@@ -247,13 +308,6 @@ const getFocusedMessage = (): ExtendedMessage | UnsentMessage | null => {
     return messages[focusedMessageIndex.value] ?? null
   }
   return null
-}
-
-// Extract URLs from text content
-const extractUrls = (text: string): string[] => {
-  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi
-  const matches = text.match(urlRegex) || []
-  return [...new Set(matches)]
 }
 
 // Handle open URL for the focused message (for mobile button)
@@ -281,7 +335,9 @@ const handleOpenUrlFocused = (): { action: 'none' | 'single' | 'multiple', urls:
 
 defineExpose({
   scrollToBottom,
+  focusMessage,
   focusMessageById,
+  focusList,
   getFocusedMessage,
   handleOpenUrlFocused,
   extractUrls

@@ -16,8 +16,10 @@
         :readonly="readonly"
         :required="required"
         :autocomplete="autocomplete"
+        :autofocus="autofocus"
+        :aria-label="ariaLabel"
         :aria-invalid="error ? 'true' : 'false'"
-        :aria-describedby="error ? `${inputId}-error` : undefined"
+        :aria-describedby="describedBy"
         :class="[
           'base-input__field',
           { 'base-input__field--error': error }
@@ -34,7 +36,7 @@
       {{ error }}
     </div>
     
-    <div v-else-if="helpText" class="base-input__help">
+    <div v-else-if="helpText" :id="`${inputId}-help`" class="base-input__help">
       {{ helpText }}
     </div>
   </div>
@@ -52,6 +54,14 @@ interface Props {
   readonly?: boolean
   required?: boolean
   autocomplete?: string
+  /** Puts the attribute on the real <input>, so dialogs can target it for initial focus. */
+  autofocus?: boolean
+  /**
+   * Declared as props rather than left to fall through: unmatched attributes
+   * land on the wrapper <div>, which would leave the actual field unnamed.
+   */
+  ariaLabel?: string
+  ariaDescribedby?: string
   error?: string
   helpText?: string
   id?: string
@@ -61,7 +71,8 @@ const props = withDefaults(defineProps<Props>(), {
   type: 'text',
   disabled: false,
   readonly: false,
-  required: false
+  required: false,
+  autofocus: false
 })
 
 const emit = defineEmits<{
@@ -74,6 +85,15 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLInputElement>()
 const inputId = computed(() => props.id || `input-${Math.random().toString(36).substr(2, 9)}`)
+
+// Caller-supplied description plus whichever of error/help text is on screen.
+const describedBy = computed(() => {
+  const ids: string[] = []
+  if (props.ariaDescribedby) ids.push(props.ariaDescribedby)
+  if (props.error) ids.push(`${inputId.value}-error`)
+  else if (props.helpText) ids.push(`${inputId.value}-help`)
+  return ids.length > 0 ? ids.join(' ') : undefined
+})
 
 const handleInput = (event: Event) => {
   const target = event.target as HTMLInputElement

@@ -10,9 +10,9 @@
         <Icon name="menu" />
       </button>
       <h1 class="mobile-title">{{ appStore.currentChannel?.name || 'Notebrook' }}</h1>
-      <button 
+      <button
         class="mobile-search-button"
-        @click="showSearchDialog = true"
+        @click="openSearch('channel')"
         aria-label="Search messages"
       >
         <Icon name="search" />
@@ -62,7 +62,7 @@
         <ChatHeader
           class="desktop-header"
           :channel-name="appStore.currentChannel.name"
-          @search="showSearchDialog = true"
+          @search="openSearch('channel')"
         />
         
         <!-- Messages -->
@@ -104,10 +104,18 @@
       <SettingsDialog @close="showSettings = false" />
     </BaseDialog>
     
+    <!-- Scope lives in the dialog's own selector and status line, which stay
+         accurate if the user changes it, so the title stays neutral. -->
     <BaseDialog v-model:show="showSearchDialog" title="Search Messages" size="lg">
       <SearchDialog
+        ref="searchDialog"
+        :scope="searchScope"
+        :channel-id="appStore.currentChannelId"
         @close="showSearchDialog = false"
         @select-message="handleSelectMessage"
+        @open-message-dialog="handleOpenMessageDialog"
+        @open-message-dialog-edit="handleOpenMessageDialogEdit"
+        @open-links="handleOpenLinks"
       />
     </BaseDialog>
     
@@ -220,12 +228,14 @@ if (authStore.serverUrl) {
 // Refs
 const messagesContainer = ref()
 const messageInput = ref()
+const searchDialog = ref()
 
 // Dialog states
 const showChannelDialog = ref(false)
 const showChannelInfoDialog = ref(false)
 const showSettings = ref(false)
 const showSearchDialog = ref(false)
+const searchScope = ref<'channel' | 'global'>('global')
 const showFileDialog = ref(false)
 const showVoiceDialog = ref(false)
 const showMessageDialog = ref(false)
@@ -244,6 +254,22 @@ const selectedChannelForInfo = ref<Channel | null>(null)
 // Mock unread counts (implement real logic later)
 const unreadCounts = ref<Record<number, number>>({})
 
+/**
+ * Open (or retarget) the search dialog. Pressing the shortcut again while it's
+ * already up re-focuses and selects the query, the way a browser's own find bar
+ * behaves — and switches scope if the other shortcut was used.
+ */
+const openSearch = (scope: 'channel' | 'global') => {
+  searchScope.value = scope === 'channel' && !appStore.currentChannelId ? 'global' : scope
+
+  if (showSearchDialog.value) {
+    nextTick(() => searchDialog.value?.focusInput?.())
+    return
+  }
+
+  showSearchDialog.value = true
+}
+
 // Set up keyboard shortcuts
 const { addShortcut } = useKeyboardShortcuts()
 
@@ -256,12 +282,33 @@ const setupKeyboardShortcuts = () => {
     handler: () => { showSettings.value = true }
   })
   
-  // Ctrl+Shift+F - Search
+  // Ctrl+F - Search the current channel. Marked global so it still fires while
+  // the composer has focus, and preventDefault keeps the browser's find bar shut.
+  addShortcut({
+    key: 'f',
+    ctrlKey: true,
+    global: true,
+    handler: () => openSearch('channel')
+  })
+  addShortcut({
+    key: 'f',
+    metaKey: true,
+    global: true,
+    handler: () => openSearch('channel')
+  })
+
+  // Ctrl+Shift+F - Search every channel
   addShortcut({
     key: 'f',
     ctrlKey: true,
     shiftKey: true,
-    handler: () => { showSearchDialog.value = true }
+    handler: () => openSearch('global')
+  })
+  addShortcut({
+    key: 'f',
+    metaKey: true,
+    shiftKey: true,
+    handler: () => openSearch('global')
   })
   
   // Ctrl+Z / Cmd+Z - Undo last delete (re-adds most recently deleted message;
@@ -413,10 +460,10 @@ const handleOpenUrlFocused = () => {
   }
 }
 
-const selectChannel = async (channelId: number) => {
+const selectChannel = async (channelId: number, options: { focusInput?: boolean } = {}) => {
   console.log('Selecting channel:', channelId)
   await appStore.setCurrentChannel(channelId)
-  
+
   // Try to sync messages for this channel
   try {
     await syncService.syncChannelMessages(channelId)
@@ -424,13 +471,17 @@ const selectChannel = async (channelId: number) => {
   } catch (error) {
     console.log('Failed to sync channel messages, using local cache')
   }
-  
+
   scrollToBottom()
-  
-  // Auto-focus message input when switching channels
-  nextTick(() => {
-    messageInput.value?.focus()
-  })
+
+  // Auto-focus message input when switching channels. Callers that are heading
+  // somewhere specific (a search result) opt out, so they don't have to win a
+  // race against this to keep the focus they just placed.
+  if (options.focusInput !== false) {
+    nextTick(() => {
+      messageInput.value?.focus()
+    })
+  }
 }
 
 // Paste-to-upload: Ctrl/Cmd+V with file(s) on the clipboard (e.g. a copied
@@ -561,7 +612,7 @@ const handleSelectMessage = async (message: ExtendedMessage) => {
   
   // Switch to the correct channel if needed
   if (message.channel_id !== appStore.currentChannelId) {
-    await selectChannel(message.channel_id)
+    await selectChannel(message.channel_id, { focusInput: false })
   }
   
   // Wait for the DOM to update, then focus the specific message
@@ -657,27 +708,36 @@ const handleCloseMessageDialog = () => {
   shouldStartEditing.value = false
 }
 
+// The message being acted on isn't necessarily in the open channel — search
+// results reach into any channel — so route by the message's own channel_id.
+const channelIdForMessage = (messageId: number): number | null => {
+  if (selectedMessage.value?.id === messageId) return selectedMessage.value.channel_id
+
+  for (const [channelId, channelMessages] of Object.entries(appStore.messages)) {
+    if (channelMessages?.some(m => m.id === messageId)) return parseInt(channelId, 10)
+  }
+
+  return appStore.currentChannelId
+}
+
 const handleEditMessage = async (messageId: number, content: string) => {
   try {
-    if (!appStore.currentChannelId) return
-    
-    const response = await apiService.updateMessage(appStore.currentChannelId, messageId, content)
-    
-    // Update the message in the local store
-    const messageIndex = appStore.currentMessages.findIndex(m => m.id === messageId)
-    if (messageIndex !== -1) {
-      const updatedMessage = { ...appStore.currentMessages[messageIndex], content: content }
-      appStore.updateMessage(messageId, updatedMessage)
-    }
-    
+    const channelId = channelIdForMessage(messageId)
+    if (!channelId) return
+
+    await apiService.updateMessage(channelId, messageId, content)
+
+    // Update the message in the local store (searches every channel)
+    appStore.updateMessage(messageId, { content })
+
     // Update the selected message for the dialog
     if (selectedMessage.value && selectedMessage.value.id === messageId) {
       selectedMessage.value = { ...selectedMessage.value, content: content }
     }
-    
+
     toastStore.success('Message updated successfully')
     handleCloseMessageDialog()
-    
+
   } catch (error) {
     console.error('Failed to edit message:', error)
     toastStore.error('Failed to update message')
@@ -686,22 +746,20 @@ const handleEditMessage = async (messageId: number, content: string) => {
 
 const handleDeleteMessage = async (messageId: number) => {
   try {
-    if (!appStore.currentChannelId) return
+    const channelId = channelIdForMessage(messageId)
+    if (!channelId) return
 
     // Capture the message before deletion so we can re-add it on undo.
-    const deletedMessage = appStore.currentMessages.find(m => m.id === messageId)
+    const deletedMessage = (appStore.messages[channelId] || []).find(m => m.id === messageId)
 
-    await apiService.deleteMessage(appStore.currentChannelId, messageId)
+    await apiService.deleteMessage(channelId, messageId)
 
-    // Remove the message from the local store
-    const messageIndex = appStore.currentMessages.findIndex(m => m.id === messageId)
-    if (messageIndex !== -1) {
-      appStore.currentMessages.splice(messageIndex, 1)
-    }
+    // Remove the message from the local store (searches every channel)
+    appStore.removeMessage(messageId)
 
     // Server delete confirmed — record it so Ctrl+Z can re-add it.
     if (deletedMessage) {
-      recordMessageDeletion(deletedMessage, deletedMessage.channel_id ?? appStore.currentChannelId)
+      recordMessageDeletion(deletedMessage, deletedMessage.channel_id ?? channelId)
     }
 
     toastStore.success('Message deleted — Ctrl+Z to undo')
@@ -715,15 +773,9 @@ const handleDeleteMessage = async (messageId: number) => {
 
 const handleMoveMessage = async (messageId: number, targetChannelId: number) => {
   try {
-    if (!appStore.currentChannelId) return
-    
-    // Find the source channel for the message
-    let sourceChannelId = appStore.currentChannelId
-    const currentMessage = appStore.currentMessages.find(m => m.id === messageId)
-    if (currentMessage) {
-      sourceChannelId = currentMessage.channel_id
-    }
-    
+    const sourceChannelId = channelIdForMessage(messageId)
+    if (!sourceChannelId) return
+
     await apiService.moveMessage(sourceChannelId, messageId, targetChannelId)
     
     // Optimistically update local state

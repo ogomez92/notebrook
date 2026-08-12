@@ -8,6 +8,30 @@ export class SyncService {
   }
 
   /**
+   * Map the backend's camelCase message rows onto the frontend shape and put
+   * them in chronological order.
+   */
+  private normalizeServerMessages(serverMessages: any[]): ExtendedMessage[] {
+    return serverMessages
+      .map((msg: any): ExtendedMessage => ({
+        id: msg.id,
+        channel_id: msg.channelId || msg.channel_id,
+        content: msg.content,
+        created_at: msg.createdAt || msg.created_at,
+        file_id: msg.fileId || msg.file_id,
+        checked: typeof msg.checked === 'number' ? (msg.checked === 1) : (typeof msg.checked === 'boolean' ? msg.checked : null),
+        // Map the flattened file fields from backend
+        fileId: msg.fileId,
+        filePath: msg.filePath,
+        fileType: msg.fileType,
+        fileSize: msg.fileSize,
+        originalName: msg.originalName,
+        fileCreatedAt: msg.fileCreatedAt
+      }))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  }
+
+  /**
    * Sync messages for a channel: replace local data with server data
    *
    * Prunes any local messages that are no longer present on the server
@@ -27,27 +51,7 @@ export class SyncService {
       console.log(`Server has ${serverMessages.length} messages, replacing local set for channel ${channelId}`)
 
       // Transform and sort server messages only (pruning locals not on server)
-      const normalizedServerMessages: ExtendedMessage[] = serverMessages
-        .map((msg: any) => {
-          const transformedMsg: ExtendedMessage = {
-            id: msg.id,
-            channel_id: msg.channelId || msg.channel_id,
-            content: msg.content,
-            created_at: msg.createdAt || msg.created_at,
-            file_id: msg.fileId || msg.file_id,
-            checked: typeof msg.checked === 'number' ? (msg.checked === 1) : (typeof msg.checked === 'boolean' ? msg.checked : null),
-            // Map the flattened file fields from backend
-            fileId: msg.fileId,
-            filePath: msg.filePath,
-            fileType: msg.fileType,
-            fileSize: msg.fileSize,
-            originalName: msg.originalName,
-            fileCreatedAt: msg.fileCreatedAt
-          }
-          console.log(`Sync: Processing message ${msg.id}, has file:`, !!msg.fileId, `(${msg.originalName})`)
-          return transformedMsg
-        })
-        .sort((a: ExtendedMessage, b: ExtendedMessage) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      const normalizedServerMessages = this.normalizeServerMessages(serverMessages)
 
       console.log(`Pruned + normalized result: ${normalizedServerMessages.length} messages`)
 
@@ -59,6 +63,39 @@ export class SyncService {
       console.warn(`Failed to sync messages for channel ${channelId}:`, error)
       throw error
     }
+  }
+
+  /**
+   * Fill the local cache for several channels at once.
+   *
+   * Cross-channel search matches against cached messages, but a full sync only
+   * ever pulls the channel you're looking at — so channels you haven't opened
+   * on this device are invisible until they're fetched. Failures are tolerated
+   * per channel (an offline search still works over whatever is cached), and
+   * state is persisted once at the end instead of per channel.
+   *
+   * Returns the number of channels successfully fetched.
+   */
+  async syncChannels(channelIds: number[]): Promise<number> {
+    if (channelIds.length === 0) return 0
+
+    const appStore = this.getAppStore()
+
+    const outcomes = await Promise.allSettled(
+      channelIds.map(async (channelId) => {
+        const response = await apiService.getMessages(channelId)
+        appStore.setMessages(channelId, this.normalizeServerMessages(response.messages))
+      })
+    )
+
+    const failures = outcomes.filter((outcome) => outcome.status === 'rejected')
+    if (failures.length > 0) {
+      console.warn(`Failed to fetch ${failures.length}/${channelIds.length} channels for search`)
+    }
+
+    await appStore.saveState()
+
+    return outcomes.length - failures.length
   }
 
   /**

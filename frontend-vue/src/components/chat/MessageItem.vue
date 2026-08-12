@@ -16,7 +16,9 @@
     <div class="message__content">
       <span v-if="isChecked === true" class="message__check" aria-hidden="true">✔</span>
       <span v-else-if="isChecked === false" class="message__check message__check--unchecked" aria-hidden="true">☐</span>
-      {{ message.content }}
+      <!-- Kept on one line: a newline between these tags would be condensed away
+           and eat the spaces at segment boundaries. -->
+      <template v-for="(segment, index) in contentSegments" :key="index"><mark v-if="segment.match" class="message__match">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template>
     </div>
     
     <!-- File Attachment -->
@@ -25,6 +27,7 @@
     </div>
     
     <div class="message__meta">
+      <span v-if="channelName" class="message__channel">{{ channelName }}</span>
       <button
         class="message__toggle"
         type="button"
@@ -57,6 +60,8 @@ import { useUndo } from '@/composables/useUndo'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
 import { formatSmartTimestamp, formatTimestampForScreenReader } from '@/utils/time'
+import { extractUrls } from '@/utils/urls'
+import { highlightSegments } from '@/utils/fuzzy'
 import FileAttachment from './FileAttachment.vue'
 import type { ExtendedMessage, UnsentMessage, FileAttachment as FileAttachmentType } from '@/types'
 
@@ -64,6 +69,10 @@ interface Props {
   message: ExtendedMessage | UnsentMessage
   isUnsent?: boolean
   tabindex?: number
+  /** Shown alongside the timestamp when the list mixes channels (search results). */
+  channelName?: string
+  /** Character positions to highlight, from a fuzzy search match. */
+  matchIndices?: number[]
 }
 
 const emit = defineEmits<{
@@ -105,6 +114,12 @@ const hasFileAttachment = computed(() => {
 const isChecked = computed<boolean | null>(() => {
   return (props as any).message?.checked ?? null
 })
+
+// Message text split into plain/matched runs. Without matchIndices this is a
+// single plain run, i.e. exactly the old `{{ message.content }}`.
+const contentSegments = computed(() =>
+  highlightSegments(props.message.content, props.matchIndices)
+)
 
 // Create FileAttachment object from flattened message data
 const fileAttachment = computed((): FileAttachmentType | null => {
@@ -159,6 +174,11 @@ const messageAriaLabel = computed(() => {
     label += `. Has ${fileType} attachment: ${file.original_name}`
   }
   
+  // Add originating channel (search results spanning channels)
+  if (props.channelName) {
+    label += `. In ${props.channelName}`
+  }
+
   // Add timestamp
   if ('created_at' in props.message && props.message.created_at) {
     const time = formatTimestampForScreenReader(props.message.created_at)
@@ -198,14 +218,6 @@ const handleClick = () => {
   if (!props.isUnsent) {
     emit('open-dialog', props.message)
   }
-}
-
-// Extract URLs from text content
-const extractUrls = (text: string): string[] => {
-  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi
-  const matches = text.match(urlRegex) || []
-  // Remove duplicates
-  return [...new Set(matches)]
 }
 
 // Handle Shift+Enter: download an attached file, else open URL(s), else edit
@@ -432,14 +444,30 @@ defineExpose({
   margin-bottom: 8px;
 }
 
+.message__match {
+  background: #fde68a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+
 .message__files {
   margin: 8px 0;
 }
 
 .message__meta {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.message__channel {
+  margin-right: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4f46e5;
 }
 
 .message__time {
@@ -494,9 +522,18 @@ defineExpose({
   .message__content {
     color: #e2e8f0;
   }
-  
+
   .message__time {
     color: #a0aec0;
+  }
+
+  .message__match {
+    background: #a16207;
+    color: #fff7ed;
+  }
+
+  .message__channel {
+    color: #a5b4fc;
   }
 }
 </style>
