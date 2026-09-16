@@ -2,13 +2,23 @@ import type { Request, Response } from "express";
 import * as MessageService from "../services/message-service";
 import { logger } from "../globals";
 
+/**
+ * Clients that registered for push send their device id on every request so
+ * the server can avoid notifying the device that just posted the message.
+ */
+const originDeviceId = (req: Request): number | null => {
+    const raw = req.get('x-device-id');
+    const id = raw ? Number(raw) : NaN;
+    return Number.isInteger(id) ? id : null;
+}
+
 export const createMessage = async (req: Request, res: Response) => {
     const { content } = req.body;
     const { channelId } = req.params;
     if (!content || !channelId) {
         return res.status(400).json({ error: 'Content and channel ID are required' });
     }
-    const messageId = await MessageService.createMessage(channelId, content);
+    const messageId = await MessageService.createMessage(channelId, content, { originDeviceId: originDeviceId(req) });
     logger.info(`Message ${messageId} created in channel ${channelId}`);
 
     res.json({ id: messageId, channelId, content, createdAt: new Date().toISOString() });

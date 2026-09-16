@@ -29,4 +29,7 @@ export const attachEvents = (ws: WebSocket) => {
     events.on('channel-updated', (id, name) => {
         ws.send(JSON.stringify({ type: 'channel-updated', data: {id, name }}));
     });
+    events.on('channel-notify-updated', (id, notify) => {
+        ws.send(JSON.stringify({ type: 'channel-notify-updated', data: {id, notify }}));
+    });
 }

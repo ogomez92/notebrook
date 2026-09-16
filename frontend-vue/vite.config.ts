@@ -9,7 +9,10 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,wav,mp3}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,wav,mp3}'],
+        // Push handlers live in public/push-sw.js and are pulled into the
+        // generated worker, so Workbox keeps owning precaching.
+        importScripts: ['push-sw.js']
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'sounds/*.wav'],
       manifest: {

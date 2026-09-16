@@ -17,6 +17,36 @@
     
     <div class="actions-section">
       <div class="action-group">
+        <h3>Notifications</h3>
+
+        <label class="notify-toggle">
+          <input
+            type="checkbox"
+            class="checkbox"
+            :checked="notifyEnabled"
+            :disabled="togglingNotify"
+            @change="toggleNotify"
+          />
+          <span>Push new messages in this channel to my devices</span>
+        </label>
+
+        <p v-if="notifyEnabled && pushState && pushState.status !== 'on'" class="notify-hint">
+          <template v-if="pushState.status === 'off'">
+            This browser isn't receiving notifications yet.
+            <button type="button" class="link-button" @click="enablePushHere" :disabled="enablingPush">
+              Enable on this device
+            </button>
+          </template>
+          <template v-else-if="pushState.status === 'denied'">
+            Notifications are blocked for this site in the browser's settings. Other devices still get them.
+          </template>
+          <template v-else>
+            This browser doesn't support push notifications. Other devices still get them.
+          </template>
+        </p>
+      </div>
+
+      <div class="action-group">
         <h3>Channel Actions</h3>
         
         <BaseButton
@@ -127,6 +157,7 @@ import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
+import { pushService, type PushState } from '@/services/push'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseDialog from '@/components/base/BaseDialog.vue'
@@ -160,6 +191,13 @@ const selectedTargetChannel = ref<number | null>(null)
 const merging = ref(false)
 const deleting = ref(false)
 
+// Notification state. The channel flag lives on the server and applies to
+// every device; whether *this* browser can receive it is a separate question.
+const notifyEnabled = ref(!!props.channel.notify)
+const togglingNotify = ref(false)
+const pushState = ref<PushState | null>(null)
+const enablingPush = ref(false)
+
 // Input ref for focus
 const nameInput = ref()
 
@@ -173,6 +211,39 @@ const availableChannels = computed(() =>
 )
 
 // Actions
+const toggleNotify = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const next = input.checked
+  togglingNotify.value = true
+  try {
+    await apiService.setChannelNotify(props.channel.id, next)
+    notifyEnabled.value = next
+    const stored = appStore.channels.find(ch => ch.id === props.channel.id)
+    if (stored) stored.notify = next
+    toastStore.success(next ? 'Notifications on for this channel' : 'Notifications off for this channel')
+  } catch (error) {
+    console.error('Failed to update channel notifications:', error)
+    input.checked = !next
+    toastStore.error('Failed to update notifications - this requires an internet connection')
+  } finally {
+    togglingNotify.value = false
+  }
+}
+
+const enablePushHere = async () => {
+  enablingPush.value = true
+  try {
+    await pushService.enable()
+    pushState.value = await pushService.getState()
+    toastStore.success('Notifications enabled on this device')
+  } catch (error) {
+    console.error('Failed to enable push:', error)
+    toastStore.error((error as Error).message || 'Failed to enable notifications')
+  } finally {
+    enablingPush.value = false
+  }
+}
+
 const makeDefault = async () => {
   try {
     await appStore.updateSettings({ defaultChannelId: props.channel.id })
@@ -306,8 +377,9 @@ const cancel = () => {
   emit('close')
 }
 
-onMounted(() => {
+onMounted(async () => {
   nameInput.value?.focus()
+  pushState.value = await pushService.getState()
 })
 </script>
 
@@ -342,6 +414,48 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.action-group + .action-group {
+  margin-top: 1.5rem;
+}
+
+.notify-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.notify-hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #3b82f6;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .dialog-actions {
@@ -452,6 +566,18 @@ onMounted(() => {
   
   .merge-form label {
     color: rgba(255, 255, 255, 0.87);
+  }
+
+  .notify-toggle {
+    color: rgba(255, 255, 255, 0.87);
+  }
+
+  .notify-hint {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .link-button {
+    color: #60a5fa;
   }
   
   .target-select {

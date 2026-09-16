@@ -2,6 +2,8 @@ export interface Channel {
     id: number;
     name: string;
     created_at: string;
+    /** Push every new message in this channel to registered devices. */
+    notify?: boolean;
 }
 
 export interface Message {

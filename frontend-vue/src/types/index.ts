@@ -3,6 +3,8 @@ export interface Channel {
   id: number
   name: string
   created_at: string
+  /** Push every new message in this channel to registered devices. */
+  notify?: boolean
 }
 
 export interface Message {
@@ -51,10 +53,28 @@ export interface MutableMessage {
 
 // WebSocket Event Types
 export interface WebSocketEvent {
-  type: 'message-created' | 'message-updated' | 'message-deleted' | 
+  type: 'message-created' | 'message-updated' | 'message-deleted' | 'message-moved' |
         'file-uploaded' | 'channel-created' | 'channel-deleted' | 
-        'channel-merged' | 'channel-updated'
+        'channel-merged' | 'channel-updated' | 'channel-notify-updated'
   data: any
+}
+
+// Push Notification Types (see backend/PUSH.md)
+export type PushPlatform = 'apns' | 'webpush' | 'fcm' | (string & {})
+
+export interface PushDevice {
+  id: number
+  platform: PushPlatform
+  token: string
+  data: Record<string, unknown> | null
+  name: string | null
+  createdAt: string
+  lastSeenAt: string
+}
+
+export interface PushConfig {
+  platforms: PushPlatform[]
+  webPush: { publicKey: string } | null
 }
 
 // Frontend State Types

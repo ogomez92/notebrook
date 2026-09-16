@@ -1,8 +1,9 @@
-import type { Channel, Message, ExtendedMessage, FileAttachment } from '@/types'
+import type { Channel, Message, ExtendedMessage, FileAttachment, PushConfig, PushDevice, PushPlatform } from '@/types'
 
 class ApiService {
   private baseUrl = import.meta.env.DEV ? 'http://localhost:3000' : ''
   private token = ''
+  private deviceId: number | null = null
 
   setToken(token: string) {
     this.token = token
@@ -14,17 +15,27 @@ class ApiService {
     console.log('API service base URL set:', url)
   }
 
-  private getHeaders(): HeadersInit {
+  /**
+   * Push device this browser registered as. Sent on every request so the
+   * server doesn't push our own messages back to us.
+   */
+  setDeviceId(id: number | null) {
+    this.deviceId = id
+  }
+
+  private getHeaders(): Record<string, string> {
     return {
-      'Authorization': this.token,
+      ...this.getFormHeaders(),
       'Content-Type': 'application/json'
     }
   }
 
-  private getFormHeaders(): HeadersInit {
-    return {
-      'Authorization': this.token
+  private getFormHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Authorization': this.token }
+    if (this.deviceId !== null) {
+      headers['X-Device-Id'] = String(this.deviceId)
     }
+    return headers
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -43,7 +54,15 @@ class ApiService {
 
     if (!response.ok) {
       console.error('API request failed:', response.status, response.statusText)
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+      // Surface the server's reason when it sent one ({ error: "..." }).
+      let detail = `${response.status} ${response.statusText}`
+      try {
+        const body = await response.json()
+        if (body && typeof body.error === 'string') detail = body.error
+      } catch {
+        // Not JSON; keep the status line.
+      }
+      throw new Error(`API request failed: ${detail}`)
     }
 
     return response.json()
@@ -90,6 +109,43 @@ class ApiService {
     return this.request(`/channels/${sourceChannelId}/merge`, {
       method: 'PUT',
       body: JSON.stringify({ targetChannelId: targetChannelId.toString() })
+    })
+  }
+
+  /** Mark or unmark a channel so new messages in it are pushed to devices. */
+  async setChannelNotify(channelId: number, notify: boolean): Promise<{ id: number, notify: boolean }> {
+    return this.request(`/channels/${channelId}/notify`, {
+      method: 'PUT',
+      body: JSON.stringify({ notify })
+    })
+  }
+
+  // Push notifications (see backend/PUSH.md)
+  async getPushConfig(): Promise<PushConfig> {
+    return this.request('/push/config')
+  }
+
+  async registerPushDevice(input: {
+    platform: PushPlatform
+    token: string
+    data?: Record<string, unknown> | null
+    name?: string | null
+  }): Promise<PushDevice> {
+    return this.request('/push/devices', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    })
+  }
+
+  async deletePushDevice(deviceId: number): Promise<{ message: string }> {
+    return this.request(`/push/devices/${deviceId}`, {
+      method: 'DELETE'
+    })
+  }
+
+  async testPushDevice(deviceId: number): Promise<{ message: string }> {
+    return this.request(`/push/devices/${deviceId}/test`, {
+      method: 'POST'
     })
   }
 

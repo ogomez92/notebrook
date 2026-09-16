@@ -19,6 +19,12 @@
         :aria-label="channelAriaLabel"
       >
         <span class="channel-name">{{ channel.name }}</span>
+        <span
+          v-if="channel.notify"
+          class="channel-notify"
+          aria-hidden="true"
+          title="Push notifications on"
+        >🔔</span>
         <span v-if="unreadCount" class="channel-unread">
           {{ unreadCount }}
         </span>
@@ -60,6 +66,9 @@ const props = defineProps<Props>()
 // Better ARIA label that announces the channel name and unread count
 const channelAriaLabel = computed(() => {
   let label = `${props.channel.name}`
+  if (props.channel.notify) {
+    label += ', notifications on'
+  }
   if (props.unreadCount) {
     label += `, ${props.unreadCount} unread message${props.unreadCount > 1 ? 's' : ''}`
   }
@@ -134,6 +143,14 @@ const handleKeydown = (event: KeyboardEvent) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.channel-notify {
+  font-size: 0.75rem;
+  line-height: 1;
+  opacity: 0.8;
+  flex-shrink: 0;
+  margin-right: 0.375rem;
 }
 
 .channel-unread {

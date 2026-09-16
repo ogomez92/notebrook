@@ -2,11 +2,27 @@ import { db } from "../db";
 import { events } from "../globals";
 import * as FileService from "./file-service";
 
+interface ChannelRow {
+    id: number;
+    name: string;
+    createdAt: string;
+    notify: number;
+}
+
+// SQLite stores the notify flag as 0/1; clients get a boolean.
+const fromRow = (row: ChannelRow) => ({ ...row, notify: row.notify === 1 });
+
 export const createChannel = async (name: string) => {
     const query = db.prepare(`INSERT INTO channels (name) VALUES ($name)`);
     const result = query.run({ name: name });
-    events.emit('channel-created', { id: result.lastInsertRowid, name });
-    return { id: result.lastInsertRowid, name };
+    const channel = { id: result.lastInsertRowid, name, notify: false };
+    events.emit('channel-created', channel);
+    return channel;
+}
+
+export const getChannel = (id: number | string) => {
+    const row = db.prepare(`SELECT * FROM channels WHERE id = $id`).get({ id: Number(id) }) as ChannelRow | undefined;
+    return row ? fromRow(row) : undefined;
 }
 
 export const getOrCreateChannelByName = async (name: string) => {
@@ -35,8 +51,18 @@ export const deleteChannel = async (id: string) => {
 
 export const getChannels = async () => {
     const query = db.prepare(`SELECT * FROM channels`);
-    const rows = query.all();
-    return rows;
+    const rows = query.all() as ChannelRow[];
+    return rows.map(fromRow);
+}
+
+/** Marks/unmarks a channel for push delivery of every new message. */
+export const setChannelNotify = async (id: string, notify: boolean) => {
+    const query = db.prepare(`UPDATE channels SET notify = $notify WHERE id = $id`);
+    const result = query.run({ id: id, notify: notify ? 1 : 0 });
+    if (result.changes > 0) {
+        events.emit('channel-notify-updated', id, notify);
+    }
+    return result;
 }
 
 export const mergeChannel = async (channelId: string, targetChannelId: string) => {

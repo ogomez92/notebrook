@@ -2,14 +2,22 @@ import { db } from "../db";
 import { events } from "../globals";
 import * as FileService from "./file-service";
 
-export const createMessage = async (channelId: string, content: string) => {
+export interface CreateMessageOptions {
+  /**
+   * Push device that posted the message (X-Device-Id header), forwarded on
+   * the `message-created` event so push delivery can skip the sender.
+   */
+  originDeviceId?: number | null;
+}
+
+export const createMessage = async (channelId: string, content: string, options: CreateMessageOptions = {}) => {
   const query = db.prepare(`INSERT INTO messages (channelId, content, checked) VALUES ($channelId, $content, NULL)`);
   const result = query.run({ channelId: channelId, content: content });
 
   const messageId = result.lastInsertRowid;
   // messages_fts is kept in sync by database triggers (migrations/4_fts_triggers.sql).
 
-  events.emit('message-created', messageId, channelId, content);
+  events.emit('message-created', messageId, channelId, content, { originDeviceId: options.originDeviceId ?? null });
   return messageId;
 }
 

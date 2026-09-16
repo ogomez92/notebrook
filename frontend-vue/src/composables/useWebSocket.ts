@@ -138,13 +138,17 @@ export function useWebSocket() {
     if (channelIndex !== -1) {
       const existingChannel = channels[channelIndex]
       if (existingChannel) {
-        channels[channelIndex] = {
-          id: existingChannel.id,
-          name: data.name,
-          created_at: existingChannel.created_at
-        }
+        channels[channelIndex] = { ...existingChannel, name: data.name }
         appStore.setChannels(channels)
       }
+    }
+  }
+
+  const handleChannelNotifyUpdated = (data: { id: string | number, notify: boolean }) => {
+    const channelId = parseInt(String(data.id))
+    const channel = appStore.channels.find(c => c.id === channelId)
+    if (channel) {
+      channel.notify = !!data.notify
     }
   }
 
@@ -158,6 +162,7 @@ export function useWebSocket() {
     websocketService.on('channel-deleted', handleChannelDeleted)
     websocketService.on('channel-merged', handleChannelMerged)
     websocketService.on('channel-updated', handleChannelUpdated)
+    websocketService.on('channel-notify-updated', handleChannelNotifyUpdated)
 
     websocketService.on('connected', () => {
       console.log('WebSocket connected successfully')
@@ -183,6 +188,7 @@ export function useWebSocket() {
     websocketService.off('channel-deleted', handleChannelDeleted)
     websocketService.off('channel-merged', handleChannelMerged)
     websocketService.off('channel-updated', handleChannelUpdated)
+    websocketService.off('channel-notify-updated', handleChannelNotifyUpdated)
   }
 
   onMounted(() => {

@@ -55,6 +55,42 @@
       </div>
 
       <div class="setting-group">
+        <h3>Notifications</h3>
+
+        <p class="setting-description">{{ pushDescription }}</p>
+
+        <div class="setting-actions" v-if="pushState && pushState.status !== 'unsupported' && pushState.status !== 'denied'">
+          <BaseButton
+            v-if="pushState.status === 'off'"
+            type="button"
+            variant="secondary"
+            @click="handleEnablePush"
+            :loading="isPushWorking"
+          >
+            Enable on this device
+          </BaseButton>
+          <template v-else>
+            <BaseButton
+              type="button"
+              variant="secondary"
+              @click="handleTestPush"
+              :loading="isPushWorking"
+            >
+              Send test notification
+            </BaseButton>
+            <BaseButton
+              type="button"
+              variant="secondary"
+              @click="handleDisablePush"
+              :disabled="isPushWorking"
+            >
+              Disable on this device
+            </BaseButton>
+          </template>
+        </div>
+      </div>
+
+      <div class="setting-group">
         <h3>Data Backup</h3>
 
         <p class="setting-description">
@@ -228,6 +264,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
+import { pushService, type PushState } from '@/services/push'
 import { getExporter, downloadBlob, type ExportFormat } from '@/utils/export'
 import { clear } from 'idb-keyval'
 import BaseButton from '@/components/base/BaseButton.vue'
@@ -253,6 +290,71 @@ const showRestoreConfirm = ref(false)
 const pendingRestoreFile = ref<File | null>(null)
 const soundInput = ref()
 const restoreInput = ref<HTMLInputElement>()
+
+// Push notifications for this browser
+const pushState = ref<PushState | null>(null)
+const isPushWorking = ref(false)
+
+const pushDescription = computed(() => {
+  switch (pushState.value?.status) {
+    case 'unsupported':
+      return "This browser doesn't support push notifications."
+    case 'denied':
+      return "Notifications are blocked for this site. Allow them in the browser's site settings, then reload."
+    case 'on':
+      return 'This device receives a push whenever a message is posted to a channel marked with the bell (channel settings → Notifications).'
+    case 'off':
+      return 'Get a push on this device whenever a message is posted to a channel marked with the bell (channel settings → Notifications).'
+    default:
+      return 'Checking notification status…'
+  }
+})
+
+const refreshPushState = async () => {
+  pushState.value = await pushService.getState()
+}
+
+const handleEnablePush = async () => {
+  isPushWorking.value = true
+  try {
+    await pushService.enable()
+    await refreshPushState()
+    toastStore.success('Notifications enabled on this device')
+  } catch (error) {
+    console.error('Failed to enable push:', error)
+    toastStore.error((error as Error).message || 'Failed to enable notifications')
+    await refreshPushState()
+  } finally {
+    isPushWorking.value = false
+  }
+}
+
+const handleDisablePush = async () => {
+  isPushWorking.value = true
+  try {
+    await pushService.disable()
+    await refreshPushState()
+    toastStore.success('Notifications disabled on this device')
+  } catch (error) {
+    console.error('Failed to disable push:', error)
+    toastStore.error('Failed to disable notifications')
+  } finally {
+    isPushWorking.value = false
+  }
+}
+
+const handleTestPush = async () => {
+  isPushWorking.value = true
+  try {
+    await pushService.sendTest()
+    toastStore.success('Test notification sent')
+  } catch (error) {
+    console.error('Test push failed:', error)
+    toastStore.error((error as Error).message || 'Test notification failed')
+  } finally {
+    isPushWorking.value = false
+  }
+}
 
 // Computed property for current server URL
 const currentServerUrl = computed(() => authStore.serverUrl)
@@ -403,6 +505,7 @@ onMounted(() => {
   // Copy current settings to local state
   Object.assign(localSettings, appStore.settings)
   soundInput.value.focus();
+  refreshPushState()
 })
 </script>
 

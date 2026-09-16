@@ -186,6 +186,7 @@ import { useFileUpload } from '@/composables/useFileUpload'
 import { formatTimestampForScreenReader } from '@/utils/time'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
+import { pushService } from '@/services/push'
 
 // Components
 import BaseDialog from '@/components/base/BaseDialog.vue'
@@ -804,6 +805,23 @@ const isUnsentMessage = (messageId: string | number): boolean => {
   return typeof messageId === 'string' && messageId.startsWith('unsent_')
 }
 
+// A tapped push notification opens the app at /?channel=<id> (cold start) or,
+// when a tab is already open, the service worker posts an open-channel message.
+const channelIdFromQuery = (): number | null => {
+  const raw = new URLSearchParams(window.location.search).get('channel')
+  const id = raw ? parseInt(raw, 10) : NaN
+  return Number.isInteger(id) ? id : null
+}
+
+const handleServiceWorkerMessage = (event: MessageEvent) => {
+  const data = event.data
+  if (data && data.type === 'open-channel' && typeof data.channelId === 'number') {
+    if (appStore.channels.some(c => c.id === data.channelId)) {
+      selectChannel(data.channelId)
+    }
+  }
+}
+
 // Update document title when channel changes
 watch(() => appStore.currentChannel, (channel) => {
   if (channel) {
@@ -836,6 +854,12 @@ onMounted(async () => {
   
   // 3. WebSocket connection (will gracefully fail if offline)
   useWebSocket()
+
+  // 3b. Push: identify this device to the API and refresh its registration
+  pushService.restore().catch((error) => console.warn('Push restore failed:', error))
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+  }
   
   // 4. Set up keyboard shortcuts + paste-to-upload + drag-drop safety net
   setupKeyboardShortcuts()
@@ -843,8 +867,13 @@ onMounted(async () => {
   window.addEventListener('dragover', preventStrayFileDrop)
   window.addEventListener('drop', preventStrayFileDrop)
   
-  // 5. Auto-select first channel if none selected and we have channels
-  if (!appStore.currentChannelId && appStore.channels.length > 0) {
+  // 5. A channel requested by a notification tap wins over the remembered one;
+  //    otherwise auto-select the first channel if none is selected
+  const requestedChannelId = channelIdFromQuery()
+  if (requestedChannelId !== null && appStore.channels.some(c => c.id === requestedChannelId)) {
+    await selectChannel(requestedChannelId)
+    router.replace({ path: '/', query: {} })
+  } else if (!appStore.currentChannelId && appStore.channels.length > 0) {
     const firstChannel = appStore.channels[0]
     if (firstChannel) {
       await selectChannel(firstChannel.id)
@@ -877,6 +906,9 @@ onUnmounted(() => {
   document.removeEventListener('paste', handlePaste)
   window.removeEventListener('dragover', preventStrayFileDrop)
   window.removeEventListener('drop', preventStrayFileDrop)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+  }
 })
 </script>
 

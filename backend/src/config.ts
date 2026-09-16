@@ -19,3 +19,29 @@ export const FEED_CHANNEL = process.env["FEED_CHANNEL"] || "feeds";
 export const USE_SSL = process.env["USE_SSL"] === "1" ? true : false;
 export const SSL_KEY = process.env["SSL_KEY"] || "";
 export const SSL_CERT = process.env["SSL_CERT"] || "";
+
+// --- Push notifications -----------------------------------------------------
+// A provider is enabled only when all of its settings are present; with none
+// configured the push endpoints still work (devices can register, channels can
+// be marked) but nothing is delivered. See PUSH.md.
+
+// Apple Push Notification service (iOS). Token-based auth with a .p8 key.
+// Either paste the key contents (newlines may be written as "\n") or point at
+// the file.
+export const APNS_KEY = (process.env["APNS_KEY"] || "").replaceAll("\\n", "\n");
+export const APNS_KEY_PATH = process.env["APNS_KEY_PATH"] || "";
+export const APNS_KEY_ID = process.env["APNS_KEY_ID"] || "";
+export const APNS_TEAM_ID = process.env["APNS_TEAM_ID"] || "";
+export const APNS_BUNDLE_ID = process.env["APNS_BUNDLE_ID"] || "com.oriolgomez.notebrook";
+// Debug builds installed from Xcode use the sandbox gateway; TestFlight and
+// App Store builds use production.
+export const APNS_PRODUCTION = process.env["APNS_PRODUCTION"] === "1";
+
+// Web Push (browsers / PWA). Generate a pair with `npm run push:vapid`.
+export const VAPID_PUBLIC_KEY = process.env["VAPID_PUBLIC_KEY"] || "";
+export const VAPID_PRIVATE_KEY = process.env["VAPID_PRIVATE_KEY"] || "";
+// Contact for the push service operator: "mailto:you@example.com" or an https URL.
+export const VAPID_SUBJECT = process.env["VAPID_SUBJECT"] || "";
+
+// Longest message excerpt placed in a notification body.
+export const PUSH_BODY_MAX_LENGTH = parseInt(process.env["PUSH_BODY_MAX_LENGTH"]!) || 200;

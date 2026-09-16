@@ -45,6 +45,22 @@ export const mergeChannel = async (req: Request, res: Response) => {
     res.json({ message: 'Channels merged successfully' });
 }
 
+/** PUT /channels/:channelId/notify  body: { notify: boolean } */
+export const setNotify = async (req: Request, res: Response) => {
+    const { channelId } = req.params;
+    const { notify } = req.body ?? {};
+    if (!channelId || typeof notify !== 'boolean') {
+        return res.status(400).json({ error: 'Channel ID and a boolean notify are required' });
+    }
+    const result = await ChannelService.setChannelNotify(channelId, notify);
+    if (result.changes === 0) {
+        return res.status(404).json({ error: 'Channel not found' });
+    }
+    logger.info(`Channel ${channelId} notifications ${notify ? 'enabled' : 'disabled'}`);
+
+    res.json({ id: parseInt(channelId), notify });
+}
+
 export const updateChannel = async (req: Request, res: Response) => {
     const { channelId } = req.params;
     const { name } = req.body;

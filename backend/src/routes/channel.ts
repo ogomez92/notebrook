@@ -9,3 +9,4 @@ router.get('/', authenticate, ChannelController.getChannels);
 router.put('/:channelId', authenticate, ChannelController.updateChannel);
 router.delete('/:channelId', authenticate, ChannelController.deleteChannel);
 router.put('/:channelId/merge', authenticate, ChannelController.mergeChannel);
+router.put('/:channelId/notify', authenticate, ChannelController.setNotify);

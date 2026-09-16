@@ -1,7 +1,10 @@
 CREATE TABLE IF NOT EXISTS channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  -- 1 = push every new message in this channel to all registered devices
+  -- (see migrations/5_push.sql).
+  notify INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,3 +48,15 @@ BEGIN
   INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
   INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+
+-- Devices that receive push notifications (see migrations/5_push.sql).
+CREATE TABLE IF NOT EXISTS push_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  platform TEXT NOT NULL,
+  token TEXT NOT NULL,
+  data TEXT NULL,
+  name TEXT NULL,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  lastSeenAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, token)
+);
