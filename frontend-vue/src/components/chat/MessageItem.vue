@@ -59,7 +59,7 @@ import { useAppStore } from '@/stores/app'
 import { useUndo } from '@/composables/useUndo'
 import { apiService } from '@/services/api'
 import { syncService } from '@/services/sync'
-import { formatSmartTimestamp, formatTimestampForScreenReader } from '@/utils/time'
+import { formatSmartTimestamp, formatTimestampForScreenReader, formatRelativeTime } from '@/utils/time'
 import { extractUrls } from '@/utils/urls'
 import { highlightSegments } from '@/utils/fuzzy'
 import FileAttachment from './FileAttachment.vue'
@@ -281,10 +281,24 @@ const handleKeydown = (event: KeyboardEvent) => {
     // Announce message content to assistive technology
     announce(props.message.content)
     toastStore.info('Reading message')
+  } else if (event.key === 'd') {
+    announceTimestamp()
   } else if (event.key === 'Delete') {
     event.preventDefault()
     handleDelete()
   }
+}
+
+// Announce when the message was sent: relative age first, then the date/time
+const announceTimestamp = () => {
+  const sentAt = 'created_at' in props.message
+    ? props.message.created_at
+    : new Date(props.message.timestamp).toISOString()
+  if (!sentAt) return
+
+  const announcement = `${formatRelativeTime(sentAt)}, ${formatTimestampForScreenReader(sentAt)}`
+  toastStore.info(announcement)
+  announce(announcement)
 }
 
 // Delete current message (supports sent and unsent)

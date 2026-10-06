@@ -65,7 +65,7 @@
         <div><dt>↑ ↓ Home End</dt><dd>move between results</dd></div>
         <div><dt>Shift + Enter</dt><dd>open the result's link, or download its file</dd></div>
         <div><dt>E</dt><dd>edit the result</dd></div>
-        <div><dt>C</dt><dd>copy it &nbsp;·&nbsp; <kbd>R</kbd> read it aloud &nbsp;·&nbsp; <kbd>Space</kbd> check it</dd></div>
+        <div><dt>C</dt><dd>copy it &nbsp;·&nbsp; <kbd>R</kbd> read it aloud &nbsp;·&nbsp; <kbd>D</kbd> read its date &nbsp;·&nbsp; <kbd>Space</kbd> check it</dd></div>
         <div><dt>Delete</dt><dd>delete it (Ctrl+Z undoes)</dd></div>
         <div><dt>Escape</dt><dd>from the results, back to the box; from the box, close</dd></div>
       </dl>

@@ -27,6 +27,7 @@
     
     <div class="sidebar__content">
       <ChannelList
+        ref="channelList"
         :channels="channels"
         :current-channel-id="currentChannelId"
         :unread-counts="unreadCounts"
@@ -49,6 +50,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import ChannelList from './ChannelList.vue'
 import type { Channel } from '@/types'
@@ -68,6 +70,12 @@ defineEmits<{
   'settings': []
   'close': []
 }>()
+
+const channelList = ref<InstanceType<typeof ChannelList>>()
+
+defineExpose({
+  focusChannels: () => channelList.value?.focus() ?? false
+})
 </script>
 
 <style scoped>

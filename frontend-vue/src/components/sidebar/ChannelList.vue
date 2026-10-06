@@ -1,26 +1,28 @@
 <template>
-  <div class="channel-list-container" ref="containerRef">
-    <ul class="channel-list" role="listbox" aria-label="Channels">
+  <div class="channel-list-container">
+    <ul
+      ref="listRef"
+      class="channel-list"
+      role="listbox"
+      aria-label="Channels"
+      @keydown="handleKeydown"
+      @focusin="handleFocusin"
+    >
       <ChannelListItem
-        v-for="(channel, index) in channels"
+        v-for="channel in channels"
         :key="channel.id"
         :channel="channel"
         :is-active="channel.id === currentChannelId"
         :unread-count="unreadCounts[channel.id]"
-        :tabindex="index === focusedChannelIndex ? 0 : -1"
-        :channel-index="index"
-        :data-channel-index="index"
-        @select="handleChannelSelect"
-        @info="$emit('channel-info', $event)"
-        @keydown="handleChannelKeydown"
-        @focus="handleChannelFocus"
+        :tabbable="channel.id === tabStopId"
+        @select="emit('select-channel', $event)"
       />
     </ul>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import ChannelListItem from './ChannelListItem.vue'
 import type { Channel } from '@/types'
 
@@ -37,175 +39,131 @@ const emit = defineEmits<{
 
 const props = defineProps<Props>()
 
-const containerRef = ref<HTMLElement>()
-const focusedChannelIndex = ref(0)
+const listRef = ref<HTMLUListElement>()
 
-// For alphanumeric navigation
-const lastSearchChar = ref('')
-const lastSearchTime = ref(0)
-const searchResetDelay = 1000 // Reset after 1 second
+// Roving tabindex: exactly one option is tabbable. It's tracked by channel id
+// rather than position so it stays on the same channel when channels are added
+// or reordered. Until the user moves it, it sits on the current channel.
+const focusedChannelId = ref<number | null>(null)
 
-// Handle individual channel events
-const handleChannelSelect = (channelId: number) => {
-  emit('select-channel', channelId)
-}
+const tabStopId = computed(() => {
+  const has = (id: number | null) => id !== null && props.channels.some(c => c.id === id)
+  if (has(focusedChannelId.value)) return focusedChannelId.value
+  if (has(props.currentChannelId)) return props.currentChannelId
+  return props.channels[0]?.id ?? null
+})
 
-const handleChannelFocus = (index: number) => {
-  focusedChannelIndex.value = index
-}
+// Switching channels from elsewhere (search, create) moves the tab stop along.
+watch(() => props.currentChannelId, () => {
+  focusedChannelId.value = null
+})
 
-const handleChannelKeydown = (event: KeyboardEvent, channelIndex: number) => {
-  if (props.channels.length === 0) return
-  
-  // Don't handle keys with modifiers - let them bubble up for global shortcuts
-  if (event.ctrlKey || event.altKey || event.metaKey) {
-    return
-  }
-  
-  let newIndex = channelIndex
-  
-  switch (event.key) {
-    case 'ArrowUp':
-      event.preventDefault()
-      newIndex = Math.max(0, channelIndex - 1)
-      break
-      
-    case 'ArrowDown':
-      event.preventDefault()
-      newIndex = Math.min(props.channels.length - 1, channelIndex + 1)
-      break
-      
-    case 'Home':
-      event.preventDefault()
-      newIndex = 0
-      break
-      
-    case 'End':
-      event.preventDefault()
-      newIndex = props.channels.length - 1
-      break
-      
-    case 'Enter':
-    case ' ':
-      event.preventDefault()
-      const selectedChannel = props.channels[channelIndex]
-      if (selectedChannel) {
-        emit('select-channel', selectedChannel.id)
-      }
-      return
-      
-    case 'i':
-    case 'I':
-      // Only handle 'i' without modifiers
-      if (!event.shiftKey) {
-        event.preventDefault()
-        const infoChannel = props.channels[channelIndex]
-        if (infoChannel) {
-          emit('channel-info', infoChannel)
-        }
-        return
-      }
-      break
+const optionElement = (channelId: number) =>
+  listRef.value?.querySelector<HTMLElement>(`[role="option"][data-channel-id="${channelId}"]`)
 
-    default:
-      // Handle alphanumeric navigation (a-z, 0-9)
-      const char = event.key.toLowerCase()
-      if (/^[a-z0-9]$/.test(char)) {
-        event.preventDefault()
-        handleAlphanumericNavigation(char, channelIndex)
-        return
-      }
-      return
-  }
-  
-  if (newIndex !== channelIndex) {
-    focusChannel(newIndex)
-  }
+const channelIdFromEvent = (event: Event): number | null => {
+  const id = (event.target as HTMLElement).closest<HTMLElement>('[role="option"]')?.dataset.channelId
+  return id === undefined ? null : Number(id)
 }
 
 const focusChannel = (index: number) => {
-  focusedChannelIndex.value = index
-  nextTick(() => {
-    const buttonElement = containerRef.value?.querySelector(`[data-channel-index="${index}"] .channel-button`) as HTMLElement
-    if (buttonElement) {
-      buttonElement.focus()
-      buttonElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    }
-  })
+  const channel = props.channels[index]
+  if (channel) optionElement(channel.id)?.focus()
 }
 
-const handleAlphanumericNavigation = (char: string, currentIndex: number) => {
-  if (props.channels.length === 0) return
+const handleFocusin = (event: FocusEvent) => {
+  const id = channelIdFromEvent(event)
+  if (id !== null) focusedChannelId.value = id
+}
 
-  const now = Date.now()
-  const sameChar = lastSearchChar.value === char && (now - lastSearchTime.value) < searchResetDelay
+// Type-ahead. Typing a name ("in") moves to the next channel starting with it;
+// repeating one character ("i", "i", "i") cycles through channels starting
+// with that character. The buffer clears after a pause.
+const TYPEAHEAD_RESET_MS = 1000
+let typeaheadBuffer = ''
+let typeaheadTimer: ReturnType<typeof setTimeout> | undefined
 
-  lastSearchChar.value = char
-  lastSearchTime.value = now
+const typeahead = (char: string, fromIndex: number) => {
+  clearTimeout(typeaheadTimer)
+  typeaheadTimer = setTimeout(() => { typeaheadBuffer = '' }, TYPEAHEAD_RESET_MS)
+  const key = char.toLocaleLowerCase()
+  typeaheadBuffer += key
 
-  // Find channels starting with the character
-  const matchingIndices: number[] = []
-  props.channels.forEach((channel, index) => {
-    if (channel.name.toLowerCase().startsWith(char)) {
-      matchingIndices.push(index)
+  const isRepeat = Array.from(typeaheadBuffer).every(c => c === key)
+  const query = isRepeat ? key : typeaheadBuffer
+  // A lone or repeated character moves past the focused channel; a longer
+  // name may still match it, in which case focus stays put.
+  const start = isRepeat ? fromIndex + 1 : fromIndex
+
+  const count = props.channels.length
+  for (let offset = 0; offset < count; offset++) {
+    const index = (start + offset) % count
+    if (props.channels[index]?.name.toLocaleLowerCase().startsWith(query)) {
+      focusChannel(index)
+      return
     }
-  })
+  }
+}
 
-  if (matchingIndices.length === 0) return
+const handleKeydown = (event: KeyboardEvent) => {
+  const channelId = channelIdFromEvent(event)
+  const index = props.channels.findIndex(c => c.id === channelId)
+  const channel = props.channels[index]
+  if (!channel) return
 
-  // If pressing the same character repeatedly, cycle through matches
-  if (sameChar) {
-    // Find the next match after current index
-    const nextMatch = matchingIndices.find(index => index > currentIndex)
-    if (nextMatch !== undefined) {
-      focusChannel(nextMatch)
-    } else {
-      // Wrap around to the first match
-      const firstMatch = matchingIndices[0]
-      if (firstMatch !== undefined) {
-        focusChannel(firstMatch)
+  // Alt+Enter - settings for the focused channel (the "properties" key, as in
+  // Windows Explorer). It needs a modifier: bare letters belong to type-ahead.
+  if (event.key === 'Enter' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    event.preventDefault()
+    emit('channel-info', channel)
+    return
+  }
+
+  // Leave other modified keys to the global shortcuts
+  if (event.ctrlKey || event.altKey || event.metaKey) return
+
+  const lastIndex = props.channels.length - 1
+
+  switch (event.key) {
+    case 'ArrowUp':
+      event.preventDefault()
+      focusChannel(Math.max(0, index - 1))
+      break
+    case 'ArrowDown':
+      event.preventDefault()
+      focusChannel(Math.min(lastIndex, index + 1))
+      break
+    case 'Home':
+      event.preventDefault()
+      focusChannel(0)
+      break
+    case 'End':
+      event.preventDefault()
+      focusChannel(lastIndex)
+      break
+    case 'Enter':
+    case ' ':
+      event.preventDefault()
+      emit('select-channel', channel.id)
+      break
+    default:
+      // Any single printable character, including accented letters
+      if (Array.from(event.key).length === 1) {
+        event.preventDefault()
+        typeahead(event.key, index)
       }
-    }
-  } else {
-    // New character: jump to first match
-    const firstMatch = matchingIndices[0]
-    if (firstMatch !== undefined) {
-      focusChannel(firstMatch)
-    }
   }
 }
 
+// Move focus into the list, onto its tab stop. Returns whether focus landed,
+// which it can't while the sidebar is hidden (mobile, menu closed).
+const focus = () => {
+  const option = tabStopId.value === null ? undefined : optionElement(tabStopId.value)
+  option?.focus()
+  return !!option && document.activeElement === option
+}
 
-// Watch for channels changes and adjust focus
-watch(() => props.channels.length, (newLength) => {
-  if (focusedChannelIndex.value >= newLength) {
-    focusedChannelIndex.value = Math.max(0, newLength - 1)
-  }
-})
-
-// Set initial focus to current channel or first channel
-watch(() => props.currentChannelId, (newChannelId) => {
-  if (newChannelId) {
-    const index = props.channels.findIndex(channel => channel.id === newChannelId)
-    if (index !== -1) {
-      focusedChannelIndex.value = index
-    }
-  }
-}, { immediate: true })
-
-onMounted(() => {
-  // Focus the current channel if available
-  if (props.currentChannelId) {
-    const index = props.channels.findIndex(channel => channel.id === props.currentChannelId)
-    if (index !== -1) {
-      focusedChannelIndex.value = index
-    }
-  }
-})
-
-defineExpose({
-  focusChannel
-})
+defineExpose({ focus })
 </script>
 
 <style scoped>
@@ -213,12 +171,8 @@ defineExpose({
   flex: 1;
   overflow-y: auto;
   padding: 0.5rem 0;
-  /* iOS-specific scroll optimizations */
-  -webkit-overflow-scrolling: touch;
-  -webkit-scroll-behavior: smooth;
   scroll-behavior: smooth;
 }
-
 
 .channel-list {
   list-style: none;
@@ -251,7 +205,7 @@ defineExpose({
   .channel-list-container::-webkit-scrollbar-thumb {
     background: #4b5563;
   }
-  
+
   .channel-list-container::-webkit-scrollbar-thumb:hover {
     background: #6b7280;
   }

@@ -10,6 +10,15 @@
       >
         🔍
       </BaseButton>
+      <BaseButton
+        variant="ghost"
+        size="sm"
+        @click="$emit('channel-settings')"
+        aria-label="Channel settings"
+        title="Channel settings"
+      >
+        ⚙️
+      </BaseButton>
     </div>
   </header>
 </template>
@@ -25,6 +34,7 @@ defineProps<Props>()
 
 defineEmits<{
   search: []
+  'channel-settings': []
 }>()
 </script>
 

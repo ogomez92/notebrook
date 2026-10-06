@@ -10,13 +10,23 @@
         <Icon name="menu" />
       </button>
       <h1 class="mobile-title">{{ appStore.currentChannel?.name || 'Notebrook' }}</h1>
-      <button
-        class="mobile-search-button"
-        @click="openSearch('channel')"
-        aria-label="Search messages"
-      >
-        <Icon name="search" />
-      </button>
+      <div class="mobile-actions">
+        <button
+          class="mobile-search-button"
+          @click="openSearch('channel')"
+          aria-label="Search messages"
+        >
+          <Icon name="search" />
+        </button>
+        <button
+          v-if="appStore.currentChannel"
+          class="mobile-search-button"
+          @click="handleChannelInfo(appStore.currentChannel)"
+          aria-label="Channel settings"
+        >
+          <Icon name="settings" />
+        </button>
+      </div>
     </header>
 
     <!-- Sidebar Overlay -->
@@ -28,6 +38,7 @@
     
     <!-- Sidebar -->
     <Sidebar
+      ref="sidebar"
       :class="{ 'sidebar-open': sidebarOpen }"
       :channels="appStore.channels"
       :current-channel-id="appStore.currentChannelId"
@@ -63,6 +74,7 @@
           class="desktop-header"
           :channel-name="appStore.currentChannel.name"
           @search="openSearch('channel')"
+          @channel-settings="handleChannelInfo(appStore.currentChannel)"
         />
         
         <!-- Messages -->
@@ -227,6 +239,7 @@ if (authStore.serverUrl) {
 }
 
 // Refs
+const sidebar = ref()
 const messagesContainer = ref()
 const messageInput = ref()
 const searchDialog = ref()
@@ -341,10 +354,8 @@ const setupKeyboardShortcuts = () => {
     key: 'k',
     ctrlKey: true,
     handler: () => {
-      // Focus the first channel in the list
-      const firstChannelButton = document.querySelector('.channel-item button') as HTMLElement
-      if (firstChannelButton) {
-        firstChannelButton.focus()
+      // Focuses the channel list's tab stop, normally the current channel
+      if (sidebar.value?.focusChannels()) {
         toastStore.info('Channel selector focused')
       }
     }
@@ -1041,10 +1052,22 @@ onUnmounted(() => {
 }
 
 .mobile-title {
+  flex: 1;
+  min-width: 0;
   font-size: 1.125rem;
   font-weight: 600;
   margin: 0;
   color: #111827;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .sidebar-overlay {

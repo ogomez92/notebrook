@@ -4,41 +4,23 @@
       'channel-item',
       { 'channel-item--active': isActive }
     ]"
-    :data-channel-index="channelIndex"
-    role="listitem"
+    :data-channel-id="channel.id"
+    role="option"
+    :aria-selected="isActive ? 'true' : 'false'"
+    :aria-label="channelAriaLabel"
+    :tabindex="tabbable ? 0 : -1"
+    @click="emit('select', channel.id)"
   >
-    <div class="channel-wrapper">
-      <button
-        class="channel-button"
-        @click="$emit('select', channel.id)"
-        @focus="handleFocus"
-        role="option"
-        :aria-current="isActive"
-        @keydown="handleKeydown"
-        :tabindex="tabindex"
-        :aria-label="channelAriaLabel"
-      >
-        <span class="channel-name">{{ channel.name }}</span>
-        <span
-          v-if="channel.notify"
-          class="channel-notify"
-          aria-hidden="true"
-          title="Push notifications on"
-        >🔔</span>
-        <span v-if="unreadCount" class="channel-unread">
-          {{ unreadCount }}
-        </span>
-      </button>
-      
-      <button v-if="isActive"
-        class="channel-info-button"
-        @click.stop="$emit('info', channel)"
-        :aria-label="`Channel info for ${channel.name}`"
-        title="Channel info"
-      >
-        ⚙️
-      </button>
-    </div>
+    <span class="channel-name">{{ channel.name }}</span>
+    <span
+      v-if="channel.notify"
+      class="channel-notify"
+      aria-hidden="true"
+      title="Push notifications on"
+    >🔔</span>
+    <span v-if="unreadCount" class="channel-unread" aria-hidden="true">
+      {{ unreadCount }}
+    </span>
   </li>
 </template>
 
@@ -50,22 +32,23 @@ interface Props {
   channel: Channel
   isActive: boolean
   unreadCount?: number
-  tabindex?: number
-  channelIndex?: number
+  // The list's single roving tab stop
+  tabbable: boolean
 }
 
+// The <li role="option"> is itself the focus target: a listbox option can't
+// contain interactive children, so there's no inner button. Channel settings
+// live in the chat header (and Alt+Enter on the option). Keyboard handling
+// belongs to the parent listbox.
 const emit = defineEmits<{
   select: [channelId: number]
-  info: [channel: Channel]
-  focus: [index: number]
-  keydown: [event: KeyboardEvent, index: number]
 }>()
 
 const props = defineProps<Props>()
 
-// Better ARIA label that announces the channel name and unread count
+// Spoken name: the badges are aria-hidden, so their meaning goes in here
 const channelAriaLabel = computed(() => {
-  let label = `${props.channel.name}`
+  let label = props.channel.name
   if (props.channel.notify) {
     label += ', notifications on'
   }
@@ -74,67 +57,49 @@ const channelAriaLabel = computed(() => {
   }
   return label
 })
-
-const handleFocus = () => {
-  if (props.channelIndex !== undefined) {
-    emit('focus', props.channelIndex)
-  }
-}
-
-const handleKeydown = (event: KeyboardEvent) => {
-  if (props.channelIndex !== undefined) {
-    emit('keydown', event, props.channelIndex)
-  }
-}
 </script>
 
 <style scoped>
 .channel-item {
   list-style: none;
-  margin: 0;
-}
-
-.channel-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.channel-button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
   padding: 0.75rem 1rem;
-  background: none;
-  border: none;
-  text-align: left;
   color: #6b7280;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
   border-radius: 6px;
   margin: 0 0.5rem 0.25rem 0.5rem;
 }
 
-.channel-button:hover {
+.channel-item:hover {
   background: rgba(0, 0, 0, 0.05);
   color: #374151;
 }
 
-.channel-button:focus {
+.channel-item:focus {
   outline: none;
   background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-.channel-item--active .channel-button {
+.channel-item--active {
   background: #3b82f6;
   color: white;
 }
 
-.channel-item--active .channel-button:hover {
+.channel-item--active:hover {
   background: #2563eb;
+}
+
+/* The active option keeps its fill when focused, so give it a ring that
+   still reads against the blue. */
+.channel-item--active:focus {
+  background: #3b82f6;
+  color: white;
+  box-shadow: 0 0 0 2px #1e3a8a;
 }
 
 .channel-name {
@@ -173,68 +138,36 @@ const handleKeydown = (event: KeyboardEvent) => {
   color: #3b82f6;
 }
 
-.channel-info-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 1rem;
-  opacity: 0.6;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.channel-info-button:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.channel-info-button:focus {
-  outline: none;
-  background: rgba(59, 130, 246, 0.1);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  opacity: 1;
-}
-
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
-  .channel-button {
+  .channel-item {
     color: rgba(255, 255, 255, 0.6);
   }
   
-  .channel-button:hover {
+  .channel-item:hover {
     background: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.87);
   }
   
-  .channel-button:focus {
+  .channel-item:focus {
     background: rgba(96, 165, 250, 0.1);
     color: #60a5fa;
     box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
   }
   
-  .channel-item--active .channel-button {
+  .channel-item--active {
     background: #3b82f6;
     color: white;
   }
   
-  .channel-item--active .channel-button:hover {
+  .channel-item--active:hover {
     background: #2563eb;
   }
-  
-  .channel-info-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  .channel-info-button:focus {
-    background: rgba(96, 165, 250, 0.1);
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+
+  .channel-item--active:focus {
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 0 0 2px #93c5fd;
   }
 }
 </style>

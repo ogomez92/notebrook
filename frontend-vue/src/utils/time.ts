@@ -92,3 +92,37 @@ export function formatTimestampForScreenReader(timestamp: string): string {
     minute: '2-digit'
   })
 }
+
+const relativeTimeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
+
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 365 * 24 * 60 * 60],
+  ['month', 30 * 24 * 60 * 60],
+  ['week', 7 * 24 * 60 * 60],
+  ['day', 24 * 60 * 60],
+  ['hour', 60 * 60],
+  ['minute', 60]
+]
+
+/**
+ * Coarse relative age of a timestamp, e.g. "1 hour ago" or "3 days ago".
+ * Rounds down, so it never overstates how old something is.
+ */
+export function formatRelativeTime(timestamp: string | number): string {
+  const date = new Date(timestamp)
+
+  if (isNaN(date.getTime())) {
+    return 'Invalid date'
+  }
+
+  const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000)
+
+  for (const [unit, seconds] of RELATIVE_UNITS) {
+    if (diffSeconds >= seconds) {
+      return relativeTimeFormat.format(-Math.floor(diffSeconds / seconds), unit)
+    }
+  }
+
+  // Under a minute, or slightly in the future from clock skew
+  return 'just now'
+}
