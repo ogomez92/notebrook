@@ -57,6 +57,9 @@ export class APNsProvider implements PushProvider {
             aps: {
                 alert: { title: notification.title, body: notification.body },
                 sound: "default",
+                // Lets the iOS notification service extension apply the
+                // device's per-channel sound and interruption level.
+                "mutable-content": 1,
                 ...(notification.threadId ? { "thread-id": notification.threadId } : {}),
             },
             ...notification.data,
